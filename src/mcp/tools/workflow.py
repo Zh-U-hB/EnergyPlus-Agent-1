@@ -101,8 +101,8 @@ class WorkflowTool:
     ) -> ToolResponse:
         """Run an EnergyPlus simulation with the current configuration.
 
-        Validates references, exports to YAML, converts to IDF, and
-        executes the EnergyPlus simulation.
+        Validates references, converts ConfigState directly to IDF (no YAML
+        file written to disk), and executes the EnergyPlus simulation.
 
         Args:
             epw_path: Path to the EPW weather data file.
@@ -121,17 +121,23 @@ class WorkflowTool:
                 )
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            temp_yaml = Path(output_dir) / f"temp_{timestamp}.yaml"
             temp_idf = Path(output_dir) / f"temp_{timestamp}.idf"
 
-            self.state.export_yaml(temp_yaml)
-
-            manager = ConverterManager(temp_yaml)
+            # Pass the ConfigState dict directly — no YAML file written to disk.
+            # ConverterManager picks up BaseSchema._idf (already populated by tools)
+            # and SettingsConverter / BuildingConverter add the global settings objects
+            # (Building, GlobalGeometryRules, SimulationControl, Output:Variable, …)
+            # that agent tools don't manage.
+            manager = ConverterManager(self.state.to_yaml_dict())
             manager.convert_all()
             manager.save_idf(temp_idf)
 
-            runner = EnergyPlusRunner(idf=manager.idf)
-            runner.run_idf(epw_path)
+            runner = EnergyPlusRunner()
+            runner.run_idf(
+                epw_path,
+                idf_file_path=temp_idf,
+                output_directory=Path(output_dir),
+            )
 
             logger.info("Simulation run successfully. Output directory: {}", output_dir)
 

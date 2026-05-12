@@ -233,6 +233,7 @@ class SettingsConverter(BaseConverter):
         self.idf.add(OutputControlTableStyle(
             column_separator=model.column_separator,
             unit_conversion=model.unit_conversion,
+            format_numeric_values=None,  # EnergyPlus 25.x does not support this field
         ))
         self.logger.success("Added setting 'OutputControl:Table:Style' to IDF.")
 

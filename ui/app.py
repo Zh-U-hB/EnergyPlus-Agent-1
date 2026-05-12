@@ -35,6 +35,7 @@ NODE_LABELS: dict[str, str] = {
     "cross_ref_complete": "完整交叉验证",
     "validate": "验证建筑模型",
     "simulate": "运行 EnergyPlus",
+    "analyze": "分析仿真结果",
 }
 
 _graph = None
@@ -160,8 +161,22 @@ def run_agent(
             yield history, []
 
         elif kind == "done":
+            state = event[1]
+            # Show the analysis report from the final [analyze] message if present
+            analyze_msg = next(
+                (
+                    str(getattr(m, "content", ""))
+                    for m in reversed(state.get("messages", []))
+                    if "[analyze]" in str(getattr(m, "content", ""))
+                ),
+                None,
+            )
             files = _collect_output_files(OUTPUT_DIR)
-            if files:
+            if analyze_msg:
+                # Strip the "[analyze] " prefix for display
+                report = analyze_msg.replace("[analyze] ", "", 1)
+                history.append(_msg("assistant", report))
+            elif files:
                 file_list = "\n".join(f"  {f}" for f in files)
                 history.append(_msg("assistant", f"仿真完成！输出文件：\n{file_list}"))
             else:
