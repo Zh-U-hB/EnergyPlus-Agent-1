@@ -35,12 +35,19 @@ Given a building description (text and optional architectural drawings —
 floorplan, elevation, section, axonometric, perspective, etc.), extract
 structured specifications for every subsystem.
 
-You MUST invoke the IntakeOutput tool to return the structured JSON.
-Do NOT respond with a text/JSON message — always use the tool call.
-Fields:
-- `building`: BuildingSchema with name, terrain, convergence tolerances
-- `site_location`: SiteLocationSchema with latitude, longitude, time_zone, elevation
-- `*_specs`: one natural-language instruction string per subsystem agent
+You MUST respond with a single raw JSON object (no markdown, no code fences).
+ALL of the following fields are REQUIRED — omitting any field is an error:
+- `building`: object with name, terrain, tolerance_for_heating_sizing, tolerance_for_cooling_sizing
+- `site_location`: object with name, latitude, longitude, time_zone, elevation
+- `zone_specs`: string — zone creation instructions
+- `material_specs`: string — material definitions with thermal properties (REQUIRED, do NOT merge into construction_specs)
+- `schedule_specs`: string — schedule definitions
+- `construction_specs`: string — construction assemblies referencing materials from material_specs
+- `surface_specs`: string — surface geometry referencing zones and constructions
+- `fenestration_specs`: string — window/door instructions referencing surfaces
+- `hvac_specs`: string — HVAC system, thermostat setpoints, schedule references
+- `people_specs`: string — occupancy load per zone
+- `lights_specs`: string — lighting load per zone
 
 Rules:
 1. If latitude/longitude are not given, infer from the city/region mentioned.
@@ -122,7 +129,7 @@ def intake_node(state: AgentState) -> AgentStateUpdate:
     which intake_node writes into the shared config_state. Phase agents
     read their own `*_specs` strings from intake_output.
     """
-    llm = create_llm().with_structured_output(IntakeOutput, include_raw=True)
+    llm = create_llm().with_structured_output(IntakeOutput, method="function_calling", include_raw=True)
 
     text = state.user_input
     if state.validation_errors:

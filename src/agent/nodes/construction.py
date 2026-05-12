@@ -5,6 +5,7 @@ from src.agent.nodes._share import invoke_with_self_repair
 from src.agent.react import build_react_agent
 from src.agent.state import AgentState, AgentStateUpdate
 from src.agent.tools import make_construction_tools
+from src.agent.tools.rag_tools import _get_rag
 from src.agent.trace import TraceCollector, record_phase_trace
 
 CONSTRUCTION_SYSTEM_PROMPT = """You are a construction-assembly expert for EnergyPlus.
@@ -30,12 +31,19 @@ Rules:
   (e.g., 'ExtWall_Office', 'IntWall_Office', 'Roof_Office', 'Floor_Office',
   'Window_Office').
 - For fenestration, the construction's only layer is the glazing material.
+
+Reference database:
+- Call search_energyplus_reference to look up standard layer sequences for
+  named construction types (e.g. 'ASHRAE 90.1 exterior wall office').
+  Match returned layer names to existing materials via list_materials;
+  if a reference layer has no local equivalent, use the nearest match by
+  thermal properties.
 """
 
 
 def construction_agent(state: AgentState) -> AgentStateUpdate:
     local = state.config_state.model_copy(deep=True)
-    tools = make_construction_tools(local)
+    tools = make_construction_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="construction")
 
     agent = build_react_agent(

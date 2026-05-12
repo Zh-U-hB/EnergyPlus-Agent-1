@@ -25,6 +25,7 @@ dependencies = [
     "trimesh>=4.9.0",
     "typer>=0.20.1",
     "httpx[socks]>=0.28.1",
+    "gradio>=6.13.0",
 ]
 
 [project.scripts]

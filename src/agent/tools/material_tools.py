@@ -36,7 +36,7 @@ def _find_material(idf, name: str):
     return None, None
 
 
-def make_material_tools(config: ConfigState) -> list[BaseTool]:
+def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     idf = config._idf
 
     @tool
@@ -191,7 +191,7 @@ def make_material_tools(config: ConfigState) -> list[BaseTool]:
         idf.remove(mat_type, name)
         return _ok(f"Material '{name}' deleted successfully.")
 
-    return [
+    tools = [
         create_standard_material,
         create_nomass_material,
         create_airgap_material,
@@ -200,3 +200,16 @@ def make_material_tools(config: ConfigState) -> list[BaseTool]:
         get_material,
         delete_material,
     ]
+    if rag is not None:
+        from src.agent.tools.rag_tools import (
+            TABLE_ALL_MATERIALS,
+            TABLE_NO_MASS_MATERIALS,
+            TABLE_STANDARD_MATERIALS,
+            make_rag_tool,
+        )
+        tools.append(make_rag_tool([
+            TABLE_STANDARD_MATERIALS,
+            TABLE_NO_MASS_MATERIALS,
+            TABLE_ALL_MATERIALS,
+        ], rag=rag))
+    return tools

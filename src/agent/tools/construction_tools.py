@@ -36,7 +36,7 @@ def _material_exists(idf, name: str) -> bool:
     return any(idf.has(t, name) for t in _ALL_MATERIAL_TYPES)
 
 
-def make_construction_tools(config: ConfigState) -> list[BaseTool]:
+def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     idf = config._idf
 
     @tool
@@ -115,10 +115,18 @@ def make_construction_tools(config: ConfigState) -> list[BaseTool]:
                 items.append({"type": t, **obj.model_dump()})
         return _ok(f"Listed {len(items)} materials.", items)
 
-    return [
+    tools = [
         create_construction,
         list_constructions,
         get_construction,
         delete_construction,
         list_materials,
     ]
+    if rag is not None:
+        from src.agent.tools.rag_tools import (
+            TABLE_ALL_MATERIALS,
+            TABLE_CONSTRUCTIONS,
+            make_rag_tool,
+        )
+        tools.append(make_rag_tool([TABLE_CONSTRUCTIONS, TABLE_ALL_MATERIALS], rag=rag))
+    return tools

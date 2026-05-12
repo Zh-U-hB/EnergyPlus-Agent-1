@@ -16,7 +16,7 @@ def _err(msg: str, data=None) -> str:
     return json.dumps({"success": False, "message": msg, "data": data})
 
 
-def make_schedule_tools(config: ConfigState) -> list[BaseTool]:
+def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     idf = config._idf
 
     @tool
@@ -175,7 +175,7 @@ def make_schedule_tools(config: ConfigState) -> list[BaseTool]:
         idf.remove("Schedule:Compact", name)
         return _ok(f"Schedule:Compact '{name}' deleted successfully.")
 
-    return [
+    tools = [
         create_schedule_type_limits,
         create_schedule_compact,
         list_schedules,
@@ -183,3 +183,11 @@ def make_schedule_tools(config: ConfigState) -> list[BaseTool]:
         get_schedule,
         delete_schedule,
     ]
+    if rag is not None:
+        from src.agent.tools.rag_tools import (
+            TABLE_SCHEDULE_COMPACT,
+            TABLE_SCHEDULE_TYPE_LIMITS,
+            make_rag_tool,
+        )
+        tools.append(make_rag_tool([TABLE_SCHEDULE_TYPE_LIMITS, TABLE_SCHEDULE_COMPACT], rag=rag))
+    return tools

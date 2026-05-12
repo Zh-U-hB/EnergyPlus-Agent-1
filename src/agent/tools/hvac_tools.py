@@ -14,7 +14,7 @@ def _err(msg: str, data=None) -> str:
     return json.dumps({"success": False, "message": msg, "data": data})
 
 
-def make_hvac_tools(config: ConfigState) -> list[BaseTool]:
+def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     idf = config._idf
 
     @tool
@@ -128,7 +128,7 @@ def make_hvac_tools(config: ConfigState) -> list[BaseTool]:
         items = [s.model_dump() for s in idf.all_of_type("Schedule:Compact").values()]
         return _ok(f"Listed {len(items)} schedules.", items)
 
-    return [
+    tools = [
         create_thermostat,
         create_ideal_loads_system,
         list_thermostats,
@@ -138,3 +138,7 @@ def make_hvac_tools(config: ConfigState) -> list[BaseTool]:
         list_zones,
         list_schedules,
     ]
+    if rag is not None:
+        from src.agent.tools.rag_tools import TABLE_SIZING_PERIOD_DESIGN_DAY, make_rag_tool
+        tools.append(make_rag_tool([TABLE_SIZING_PERIOD_DESIGN_DAY], rag=rag))
+    return tools

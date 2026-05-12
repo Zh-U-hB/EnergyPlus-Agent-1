@@ -1,6 +1,10 @@
 provider: "openai"
 base_url: ${oc.env:LLM_BASE_URL,null}
 api_key: ${oc.env:LLM_API_KEY,null}
-model_name: "glm-5.1"
+model_name: "deepseek-v4-flash"
 temperature: 0.7
 max_tokens: 64000
+model_kwargs:
+  extra_body:
+    thinking:
+      type: "disabled"

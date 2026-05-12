@@ -4,6 +4,7 @@ from src.agent.llm import create_llm
 from src.agent.react import ReactState, build_react_agent
 from src.agent.state import AgentState, AgentStateUpdate
 from src.agent.tools import make_schedule_tools
+from src.agent.tools.rag_tools import _get_rag
 from src.agent.trace import TraceCollector, record_phase_trace
 
 SCHEDULE_SYSTEM_PROMPT = """You are a scheduling expert for EnergyPlus.
@@ -97,12 +98,19 @@ Rules:
 - Cover every day type: either use "AllDays", or use specific day types
   followed by "AllOtherDays" to catch the rest.
 - Call list_schedules once at the end.
+
+Reference database:
+- Call search_energyplus_reference to look up standard schedule type limit
+  bounds (e.g. 'temperature type limits heating cooling') or reference compact
+  schedule profiles for your building type (e.g. 'medium office occupancy
+  weekday fraction schedule'). Use the returned time-value data as a starting
+  point, then adjust to match the spec.
 """
 
 
 def schedule_agent(state: AgentState) -> AgentStateUpdate:
     local = state.config_state.model_copy(deep=True)
-    tools = make_schedule_tools(local)
+    tools = make_schedule_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="schedule")
 
     agent = build_react_agent(
