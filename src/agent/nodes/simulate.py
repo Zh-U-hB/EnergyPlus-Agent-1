@@ -18,6 +18,7 @@ _DEFAULT_OUTPUT_VARIABLES: tuple[tuple[str, str, str], ...] = (
     ("*", "Zone Lights Electricity Energy", "Hourly"),
     ("*", "Zone People Total Heating Energy", "Hourly"),
     ("", "Facility Total HVAC Electricity Demand Rate", "Hourly"),
+    ("*", "Surface Outside Face Incident Solar Radiation Rate per Area", "Hourly"),
 )
 
 
