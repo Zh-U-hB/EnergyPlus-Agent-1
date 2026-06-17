@@ -984,8 +984,11 @@ def build_ui() -> gr.Blocks:
                     last_history,
                     gr.update(value=files if files else None, visible=bool(files)),
                     gr.update(open=False),
-                    *([None] * 10),
-                    None,
+                    *([None] * 10),   # _all_viz_plots
+                    None,             # model_3d
+                    gr.update(),      # model_status
+                    gr.update(),      # zone_dd
+                    gr.update(),      # output_files_panel
                 )
             refreshed = _refresh_viz_panel(sid, metric_label, zone_key)
             yield (

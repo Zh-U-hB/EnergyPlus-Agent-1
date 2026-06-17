@@ -37,7 +37,7 @@ Reference database:
 
 
 def material_agent(state: AgentState) -> AgentStateUpdate:
-    local = state.config_state.model_copy(deep=True)
+    local = state.config_state.clone()
     tools = make_material_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="material")
 
