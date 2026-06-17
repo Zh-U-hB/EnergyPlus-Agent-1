@@ -17,6 +17,7 @@ from src.agent.nodes import (
     lights_agent,
     material_agent,
     people_agent,
+    revise_node,
     schedule_agent,
     simulate_node,
     surface_agent,
@@ -53,6 +54,11 @@ def _cross_ref_router(state: AgentState) -> str:
     return "validate" if state.validation_errors else "construction"
 
 
+def _entry_router(state: AgentState) -> str:
+    """START router: first turn → intake (build from scratch); revision turn → revise."""
+    return "revise" if state.is_revision else "intake"
+
+
 def build_graph() -> CompiledStateGraph[AgentState, SimContext, AgentState, AgentState]:
     """Build and compile the multi-phase agent graph.
 
@@ -70,6 +76,7 @@ def build_graph() -> CompiledStateGraph[AgentState, SimContext, AgentState, Agen
     builder = StateGraph(AgentState, context_schema=SimContext)
 
     builder.add_node("intake", intake_node)
+    builder.add_node("revise", revise_node)
 
     builder.add_node("zone", zone_agent)
     builder.add_node("material", material_agent)
@@ -89,11 +96,16 @@ def build_graph() -> CompiledStateGraph[AgentState, SimContext, AgentState, Agen
     builder.add_node("simulate", simulate_node)
     builder.add_node("analyze", analyze_node)
 
-    builder.add_edge(START, "intake")
+    # START: first turn → intake, revision turn → revise
+    builder.add_conditional_edges(START, _entry_router, ["intake", "revise"])
 
+    # Both intake and revise fan out to the same phase-1 nodes
     builder.add_edge("intake", "zone")
     builder.add_edge("intake", "material")
     builder.add_edge("intake", "schedule")
+    builder.add_edge("revise", "zone")
+    builder.add_edge("revise", "material")
+    builder.add_edge("revise", "schedule")
     builder.add_edge(["zone", "material", "schedule"], "cross_ref_foundations")
 
     builder.add_conditional_edges(
