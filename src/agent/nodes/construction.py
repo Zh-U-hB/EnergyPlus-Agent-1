@@ -42,7 +42,7 @@ Reference database:
 
 
 def construction_agent(state: AgentState) -> AgentStateUpdate:
-    local = state.config_state.model_copy(deep=True)
+    local = state.config_state.clone()
     tools = make_construction_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="construction")
 
@@ -58,7 +58,7 @@ def construction_agent(state: AgentState) -> AgentStateUpdate:
         if state.intake_output
         else state.user_input
     )
-    result = invoke_with_self_repair(agent, local, specs, phase="construction")
+    result = invoke_with_self_repair(agent, local, specs, phase="construction", is_revision=state.is_revision)
 
     final = [
         m for m in result["messages"] if isinstance(m, AIMessage) and not m.tool_calls

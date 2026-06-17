@@ -1,6 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.agent.llm import create_llm
+from src.agent.nodes._share import apply_revision_prefix
 from src.agent.react import ReactState, build_react_agent
 from src.agent.state import AgentState, AgentStateUpdate
 from src.agent.tools import make_schedule_tools
@@ -109,7 +110,7 @@ Reference database:
 
 
 def schedule_agent(state: AgentState) -> AgentStateUpdate:
-    local = state.config_state.model_copy(deep=True)
+    local = state.config_state.clone()
     tools = make_schedule_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="schedule")
 
@@ -133,6 +134,7 @@ def schedule_agent(state: AgentState) -> AgentStateUpdate:
         )
     else:
         specs = state.user_input
+    specs = apply_revision_prefix(specs, state.is_revision)
     result = agent.invoke(ReactState(messages=[HumanMessage(content=specs)]))
 
     final = [
