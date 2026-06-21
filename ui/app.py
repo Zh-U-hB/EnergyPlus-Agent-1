@@ -463,6 +463,11 @@ def run_agent(
             if latest_idf and latest_idf.exists():
                 cs = ConfigState()
                 cs.load_idf(latest_idf)
+                # Carry the seed IDF as text in a declared ConfigState field
+                # so it survives LangGraph's START-boundary input coercion
+                # (which strips the PrivateAttr _idf). merge_config_state
+                # rebuilds _idf from it on every channel write.
+                cs.seed_idf_text = latest_idf.read_text(encoding="utf-8")
                 history = _load_chat_history(session_id)
                 history_text = _format_history_for_revision(history[-6:])
                 effective_input = (
