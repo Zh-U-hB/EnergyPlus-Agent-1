@@ -41,13 +41,18 @@ class MaterialTool(BaseTool):
                 material_type = "AirGap"
             else:
                 material_type = "Standard"
-        if material_type == "Standard":
+        # Normalize so MCP/LLM callers can pass "standard", "no_mass",
+        # "No Mass", "air-gap", etc. without hitting the "Unknown type" path.
+        normalized = (
+            str(material_type).replace(" ", "").replace("-", "").replace("_", "").lower()
+        )
+        if normalized == "standard":
             return Material(**payload)
-        if material_type == "NoMass":
+        if normalized == "nomass":
             return MaterialNoMass(**payload)
-        if material_type == "AirGap":
+        if normalized == "airgap":
             return MaterialAirGap(**payload)
-        if material_type == "Glazing":
+        if normalized == "glazing":
             return WindowMaterialSimpleGlazingSystem(**payload)
         raise ValueError(f"Unknown material type: {material_type}")
 

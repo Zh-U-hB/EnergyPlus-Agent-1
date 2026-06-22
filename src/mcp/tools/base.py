@@ -52,7 +52,15 @@ class BaseTool(ABC):
         for object_type in self.object_types:
             try:
                 items = self.state.idf.all_of_type(object_type)
-            except Exception:
+            except (KeyError, ValueError) as exc:
+                # Only swallow the expected "unsupported object type" errors;
+                # log so a real failure isn't silently mistaken for "missing".
+                logger.debug(
+                    "Skipping unsupported IDF object type '{}' for {}: {}",
+                    object_type,
+                    self.component_name,
+                    exc,
+                )
                 continue
             for key, obj in items.items():
                 yield object_type, key, obj

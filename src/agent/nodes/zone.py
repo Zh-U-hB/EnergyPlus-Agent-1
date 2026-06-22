@@ -37,7 +37,8 @@ def zone_agent(state: AgentState) -> AgentStateUpdate:
     specs = state.intake_output.zone_specs if state.intake_output else state.user_input
     # If reached via a back-hop from surface (needed a zone), append.
     upstream = state.upstream_request
-    if upstream and upstream.get("target") == "zone":
+    consumed_upstream = bool(upstream and upstream.get("target") == "zone")
+    if consumed_upstream:
         specs = f"{specs}\n\n{upstream['specs']}"
     result = invoke_with_self_repair(
         agent,
@@ -55,7 +56,13 @@ def zone_agent(state: AgentState) -> AgentStateUpdate:
 
     record_phase_trace("zone", collector.export())
 
-    return AgentStateUpdate(
+    update = AgentStateUpdate(
         config_state=local,
         messages=[AIMessage(content=f"[zone] {summary}")],
     )
+    # Drop the consumed back-hop request so it can't be re-injected on retry.
+    # An empty dict is the reducer's explicit-clear sentinel (a bare None would
+    # be treated as "field omitted" by sibling branches and leave the value).
+    if consumed_upstream:
+        update["upstream_request"] = {}
+    return update

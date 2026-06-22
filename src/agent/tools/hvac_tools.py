@@ -32,6 +32,20 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         """
         if idf.has("HVACTemplate:Thermostat", name):
             return _err(f"Thermostat '{name}' already exists.")
+        # Validate referenced schedules exist so invalid refs fail fast with
+        # backhop-routing metadata instead of silently passing to the late
+        # validate_references stage.
+        schedule_names = {s.name for s in idf.all_of_type("Schedule:Compact").values()}
+        if heating_setpoint_schedule_name not in schedule_names:
+            return _err(
+                f"Schedule '{heating_setpoint_schedule_name}' not found.",
+                {"missing_ref": "Schedule:Compact", "missing_name": heating_setpoint_schedule_name},
+            )
+        if cooling_setpoint_schedule_name not in schedule_names:
+            return _err(
+                f"Schedule '{cooling_setpoint_schedule_name}' not found.",
+                {"missing_ref": "Schedule:Compact", "missing_name": cooling_setpoint_schedule_name},
+            )
         try:
             idf.add(HVACTemplateThermostat(
                 name=name,
@@ -61,6 +75,26 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         existing = idf.all_of_type("HVACTemplate:Zone:IdealLoadsAirSystem")
         if any(obj.zone_name == zone_name for obj in existing.values()):
             return _err(f"IdealLoadsAirSystem for zone '{zone_name}' already exists.")
+        # Validate referenced objects exist so invalid refs fail fast with
+        # backhop-routing metadata instead of silently passing to the late
+        # validate_references stage.
+        if not idf.has("Zone", zone_name):
+            return _err(
+                f"Zone '{zone_name}' not found.",
+                {"missing_ref": "Zone", "missing_name": zone_name},
+            )
+        if not idf.has("HVACTemplate:Thermostat", template_thermostat_name):
+            return _err(
+                f"Thermostat '{template_thermostat_name}' not found.",
+                {"missing_ref": "HVACTemplate:Thermostat", "missing_name": template_thermostat_name},
+            )
+        if system_availability_schedule_name and not idf.has(
+            "Schedule:Compact", system_availability_schedule_name
+        ):
+            return _err(
+                f"Schedule '{system_availability_schedule_name}' not found.",
+                {"missing_ref": "Schedule:Compact", "missing_name": system_availability_schedule_name},
+            )
         try:
             idf.add(HVACTemplateZoneIdealLoadsAirSystem(
                 zone_name=zone_name,
@@ -106,9 +140,14 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if obj is None:
             return _err(f"Thermostat '{name}' not found.")
         try:
+            schedule_names = {s.name for s in idf.all_of_type("Schedule:Compact").values()}
             if heating_setpoint_schedule_name is not None:
+                if heating_setpoint_schedule_name not in schedule_names:
+                    return _err(f"Schedule '{heating_setpoint_schedule_name}' not found.")
                 obj.heating_setpoint_schedule_name = heating_setpoint_schedule_name
             if cooling_setpoint_schedule_name is not None:
+                if cooling_setpoint_schedule_name not in schedule_names:
+                    return _err(f"Schedule '{cooling_setpoint_schedule_name}' not found.")
                 obj.cooling_setpoint_schedule_name = cooling_setpoint_schedule_name
             return _ok(f"Thermostat '{name}' updated successfully.", obj.model_dump())
         except Exception as e:
@@ -133,8 +172,12 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             return _err(f"IdealLoadsAirSystem for zone '{zone_name}' not found.")
         try:
             if template_thermostat_name is not None:
+                if not idf.has("HVACTemplate:Thermostat", template_thermostat_name):
+                    return _err(f"Thermostat '{template_thermostat_name}' not found.")
                 obj.template_thermostat_name = template_thermostat_name
             if system_availability_schedule_name is not None:
+                if not idf.has("Schedule:Compact", system_availability_schedule_name):
+                    return _err(f"Schedule '{system_availability_schedule_name}' not found.")
                 obj.system_availability_schedule_name = system_availability_schedule_name
             return _ok(
                 f"IdealLoadsAirSystem for zone '{zone_name}' updated successfully.",
