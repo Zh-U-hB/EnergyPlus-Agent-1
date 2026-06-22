@@ -56,20 +56,27 @@ class LLMConfig(BaseModel):
         default=None, description="Extra kwargs forwarded to the model (e.g. thinking mode)"
     )
 
-    # Models served by DeepSeek require a non-default base_url (the OpenAI
-    # provider would otherwise route to api.openai.com and fail at runtime).
-    # The check is intentionally narrow: only flag DeepSeek model names.
+    # Models served by DeepSeek's own API require a non-default base_url (the
+    # OpenAI provider would otherwise route to api.openai.com and fail at
+    # runtime). Scope the check to the OpenAI provider + DeepSeek model names so
+    # local deployments (e.g. ollama/llama.cpp serving deepseek-* with their own
+    # endpoints) aren't falsely blocked at config-load time.
     _DEEPSEEK_MODEL_PREFIX = "deepseek"
+    _OPENAI_PROVIDER = "openai"
 
     @model_validator(mode="after")
     def _validate_provider_base_url(self) -> "LLMConfig":
         model_lower = (self.model_name or "").lower()
-        needs_deepseek_base = model_lower.startswith(self._DEEPSEEK_MODEL_PREFIX)
+        provider_lower = (self.provider or "").lower()
+        needs_deepseek_base = (
+            provider_lower == self._OPENAI_PROVIDER
+            and model_lower.startswith(self._DEEPSEEK_MODEL_PREFIX)
+        )
         if needs_deepseek_base and not self.base_url:
             raise ValueError(
-                f"LLM model '{self.model_name}' is a DeepSeek model but `base_url` "
-                "is not set. Set the LLM_BASE_URL environment variable (e.g. "
-                "https://api.deepseek.com) or change `model_name`/`provider` "
-                "in src/configs/llm.yaml."
+                f"LLM model '{self.model_name}' is a DeepSeek model served via "
+                "the OpenAI provider but `base_url` is not set. Set the "
+                "LLM_BASE_URL environment variable (e.g. https://api.deepseek.com) "
+                "or change `model_name`/`provider` in src/configs/llm.yaml."
             )
         return self
