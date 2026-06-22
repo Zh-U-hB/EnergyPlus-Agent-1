@@ -136,7 +136,8 @@ def schedule_agent(state: AgentState) -> AgentStateUpdate:
         specs = state.user_input
     # If reached via a back-hop (downstream needed a schedule), append.
     upstream = state.upstream_request
-    if upstream and upstream.get("target") == "schedule":
+    consumed_upstream = bool(upstream and upstream.get("target") == "schedule")
+    if consumed_upstream:
         specs = f"{specs}\n\n{upstream['specs']}"
     result = invoke_with_self_repair(
         agent,
@@ -153,7 +154,13 @@ def schedule_agent(state: AgentState) -> AgentStateUpdate:
     summary = final[-1].content if final else "schedule done"
 
     record_phase_trace("schedule", collector.export())
-    return AgentStateUpdate(
+    update = AgentStateUpdate(
         config_state=local,
         messages=[AIMessage(content=f"[schedule] {summary}")],
     )
+    # Drop the consumed back-hop request so it can't be re-injected on retry.
+    # An empty dict is the reducer's explicit-clear sentinel (a bare None would
+    # be treated as "field omitted" by sibling branches and leave the value).
+    if consumed_upstream:
+        update["upstream_request"] = {}
+    return update

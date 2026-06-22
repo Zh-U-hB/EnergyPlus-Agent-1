@@ -79,13 +79,23 @@ def _merge_upstream_request(old: dict | None, new: dict | None) -> dict | None:
 
     Parallel branches (zone/material/schedule in phase 1, hvac/people/lights
     in phase 3) all return state updates simultaneously, so LangGraph needs a
-    reducer to merge them. Semantics: a real back-hop request (non-None)
-    always takes precedence — only one branch ever carries one per step, the
-    others return None. If every branch returns None (no hop), the result is
-    None. This also makes the field safe to explicitly set to None by a
-    target phase to clear a consumed request.
+    reducer to merge them. Semantics: a real back-hop request (non-None,
+    non-empty) always takes precedence — only one branch ever carries one per
+    step, the others omit the field or pass None. If every branch returns
+    None (no hop), the previous value is kept.
+
+    To *clear* a consumed request, a target phase sets ``upstream_request``
+    to an empty dict ``{}``; this reducer maps an explicit empty dict back to
+    None so downstream branches see "no back-hop pending". A bare ``None``
+    means "field omitted by this branch" and does not clear an existing
+    request (otherwise any sibling branch returning None would wipe a
+    legitimate hop carried by another branch).
     """
-    return new if new is not None else old
+    if new is None:
+        return old
+    if new == {}:  # explicit clear by the phase that consumed the request
+        return None
+    return new
 
 
 def _get_identity(item: Any) -> str:

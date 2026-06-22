@@ -61,11 +61,9 @@ def _get_rag() -> RAGSystem | None:
             qdrant_collection_name=qdrant_collection,
             gemini_api_key=gemini_api_key,
         )
-        _logger.info(f"RAGSystem initialized (collection={qdrant_collection})")
+        _logger.info("RAGSystem initialized (collection={})", qdrant_collection)
     except Exception as exc:
-        _logger.warning(
-            f"RAGSystem initialization failed: {exc}. RAG tools disabled."
-        )
+        _logger.warning("RAGSystem initialization failed: {}. RAG tools disabled.", exc)
     return _rag
 
 

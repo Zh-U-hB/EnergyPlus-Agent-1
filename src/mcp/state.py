@@ -158,6 +158,32 @@ def _field_dict(obj: Any) -> dict[str, Any]:
     return dict(getattr(obj, "__dict__", {}))
 
 
+# Root directory that user-facing IDF/YAML exports are confined to. Exports are
+# resolved against this and rejected if they escape it, preventing directory
+# traversal (e.g. "../../etc/passwd" or absolute paths outside the project).
+_EXPORT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _safe_output_path(output_path: str | Path) -> Path:
+    """Resolve an export path and confine it to the project root.
+
+    Raises ``ValueError`` if the resolved path escapes ``_EXPORT_ROOT``. This
+    guards MCP-facing ``export_idf`` / ``export_yaml`` endpoints from clients
+    that pass traversal sequences or absolute paths outside the workspace.
+    """
+    raw = Path(output_path)
+    base = raw if raw.is_absolute() else (_EXPORT_ROOT / raw)
+    try:
+        resolved = base.resolve(strict=False)
+        resolved.relative_to(_EXPORT_ROOT)
+    except ValueError as exc:
+        raise ValueError(
+            f"Refusing to write outside the project directory: {output_path!r} "
+            f"resolves to {resolved}, which is outside {_EXPORT_ROOT}."
+        ) from exc
+    return resolved
+
+
 class ConfigState(BaseSchema):
     """MCP configuration state backed by an ``idfpy.IDF`` object.
 
@@ -406,13 +432,13 @@ class ConfigState(BaseSchema):
         return data
 
     def export_yaml(self, output_path: str | Path) -> None:
-        path = Path(output_path)
+        path = _safe_output_path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         OmegaConf.save(config=self.to_yaml_dict(), f=path)
         logger.info("Exported YAML-like IDF snapshot to {}", path)
 
     def save_idf(self, output_path: str | Path) -> Path:
-        path = Path(output_path)
+        path = _safe_output_path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.sync_legacy_fields_to_idf()
         self.idf.save(path)
@@ -457,6 +483,10 @@ class ConfigState(BaseSchema):
 
     def clear(self) -> None:
         self.new_idf()
+        # Drop any carried seed so a subsequent recover_idf_from_seed() can't
+        # restore the model that was just cleared (relevant on revision turns
+        # or after load_idf()).
+        self.seed_idf_text = ""
         self.building = None
         self.site_location = None
         self.zones.clear()

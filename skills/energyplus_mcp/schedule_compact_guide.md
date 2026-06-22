@@ -292,8 +292,7 @@ times = [
 1. **ScheduleTypeLimits Must Exist First**: ScheduleCompact needs to reference an existing ScheduleTypeLimits
 2. **Times Must Be Continuous**: Time points must be in chronological order and cannot overlap
 3. **Values Must Be Within Range**: Values must be within the range defined by ScheduleTypeLimits
-4. **Dates Must Be Continuous**: Multiple date ranges must be continuous and cover the entire year
-5. **Last Date Must Be 12/31**: This is an EnergyPlus requirement
+4. **Last Date Must Be 12/31**: The final date range must end on `12/31` (full-year coverage). Only the last `Through` value is enforced as `12/31`; continuity between earlier ranges is not validated by `ScheduleCompactSchema`.
 
 ## Related Tools
 
