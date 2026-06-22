@@ -101,7 +101,7 @@ class MaterialConverter(BaseConverter):
         type_to_key: dict[str, str] = {
             "Standard": "Material",
             "NoMass": "Material:NoMass",
-            "AirGap": "MaterialAirGap",
+            "AirGap": "Material:AirGap",
             "Glazing": "WindowMaterial:SimpleGlazingSystem",
         }
         return type_to_key.get(material_type) or ""
@@ -140,5 +140,10 @@ class MaterialConverter(BaseConverter):
             name=material.name,
             u_factor=material.u_factor,
             solar_heat_gain_coefficient=material.solar_heat_gain_coefficient,
-            visible_transmittance=material.visible_transmittance or None,
+            # Preserve an explicit 0.0; `or None` would drop it.
+            visible_transmittance=(
+                material.visible_transmittance
+                if material.visible_transmittance is not None
+                else None
+            ),
         ))

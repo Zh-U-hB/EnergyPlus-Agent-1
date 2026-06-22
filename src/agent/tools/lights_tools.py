@@ -100,8 +100,12 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
             return _err(f"Lights '{name}' not found.")
         try:
             if zone_name is not None:
+                if not idf.has("Zone", zone_name):
+                    return _err(f"Zone '{zone_name}' not found.")
                 obj.zone_or_zonelist_or_space_or_spacelist_name = zone_name
             if schedule_name is not None:
+                if not idf.has("Schedule:Compact", schedule_name):
+                    return _err(f"Schedule '{schedule_name}' not found.")
                 obj.schedule_name = schedule_name
             if design_level_calculation_method is not None:
                 obj.design_level_calculation_method = design_level_calculation_method

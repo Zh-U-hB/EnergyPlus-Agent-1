@@ -31,6 +31,19 @@ def make_output_tools(config: ConfigState) -> list[BaseTool]:
             reporting_frequency: Detailed / Timestep / Hourly / Daily / Monthly / RunPeriod.
         """
         try:
+            # Dedup by (key_value, variable_name, reporting_frequency) so
+            # multi-turn revisions / repeated default additions don't bloat the
+            # IDF and result columns. Mirrors ConfigState._add_outputs' contract.
+            for existing in idf.all_of_type("Output:Variable").values():
+                if (
+                    getattr(existing, "key_value", None) == key_value
+                    and getattr(existing, "variable_name", None) == variable_name
+                    and getattr(existing, "reporting_frequency", None) == reporting_frequency
+                ):
+                    return _ok(
+                        f"Output:Variable '{variable_name}' is already registered.",
+                        existing.model_dump(),
+                    )
             idf.add(OutputVariable(
                 key_value=key_value,
                 variable_name=variable_name,
