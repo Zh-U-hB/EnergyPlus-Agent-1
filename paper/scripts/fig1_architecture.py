@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate Figure 1 (overall architecture) for the EnergyPlus-Agent paper.
+"""Generate Figure 1 for the EnergyPlus-Agent paper.
 
-Reproduces the layered "academic architecture" look of the reference figure:
-a landscape canvas with full-width horizontal layer bands (soft fills + a bold
-header on the top-left), rounded white inner component boxes inside each band,
-solid arrows for the main forward data flow, and a dashed loop-back arrow for
-the design feedback cycle. Labels are bilingual (Chinese + English).
+The figure intentionally follows the earlier manuscript style: a left layer
+index column, dashed horizontal separators, light academic module panels, small
+tool cards, and a dashed iterative feedback loop. The content has been updated
+to match the current implementation:
+
+    intake/revise -> [zone, material, schedule] -> cross_ref_foundations
+    -> construction -> surface -> fenestration -> [hvac, people, lights]
+    -> cross_ref_complete -> validate -> simulate -> analyze
 
 Run:
     python paper/scripts/fig1_architecture.py
@@ -17,301 +20,483 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
-
-# --------------------------------------------------------------------------- #
-# Font: Noto Sans CJK SC supports both Chinese and Latin glyphs.
-# --------------------------------------------------------------------------- #
-_FONT_PATH = os.environ.get(
-    "NOTO_CJK_PATH", "/tmp/NotoSansCJKsc-Regular.otf"
-)
-if os.path.exists(_FONT_PATH):
-    CN = FontProperties(fname=_FONT_PATH)
-else:  # fall back to default (Chinese may render as boxes if font missing)
-    CN = FontProperties()
-
-# --------------------------------------------------------------------------- #
-# Palette (aligned to the reference figure: muted, flat, one accent per layer).
-# --------------------------------------------------------------------------- #
-CANVAS_BG = "#FFFFFF"
-LAYER_BORDER = "#BFC7D1"
-TEXT_DARK = "#1F2A37"
-TEXT_MID = "#4B5563"
-ARROW_MAIN = "#6B7280"
-ARROW_FEEDBACK = "#E74C3C"
-
-# Each layer: (header_cn, header_en, fill, accent_for_header)
-LAYERS = [
-    ("用户输入层", "User Input", "#F4F6F9", "#475569"),
-    ("输入解析层", "Intent Parsing", "#EAF2FB", "#2F6FB0"),
-    ("RAG 知识层", "Retrieval-Augmented Control", "#EAF5EE", "#3F8A5A"),
-    ("智能体编排层", "Agent Orchestration", "#FBF1E8", "#C8794A"),
-    ("仿真与结果层", "Simulation & Results", "#F2ECFA", "#7A4FB6"),
-]
+from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Wedge
 
 
-# --------------------------------------------------------------------------- #
-# Geometry helpers
-# --------------------------------------------------------------------------- #
-@dataclass
-class Box:
-    """A rounded inner component box."""
-    x: float          # center x
-    y: float          # center y
+def _font() -> FontProperties:
+    """Pick a CJK-capable font when available, with a portable fallback."""
+    candidates = [
+        os.environ.get("NOTO_CJK_PATH", ""),
+        r"C:/Windows/Fonts/msyh.ttc",
+        r"C:/Windows/Fonts/simhei.ttf",
+        r"C:/Windows/Fonts/simsun.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/tmp/NotoSansCJKsc-Regular.otf",
+    ]
+    for item in candidates:
+        if item and Path(item).exists():
+            return FontProperties(fname=item)
+    return FontProperties()
+
+
+FONT = _font()
+
+
+@dataclass(frozen=True)
+class Rect:
+    x: float
+    y: float
     w: float
     h: float
-    title: str        # bold first line
-    subtitle: str     # smaller second line (optional)
-    accent: str = "#2F6FB0"
 
-    def left(self) -> float:
-        return self.x - self.w / 2
-
-    def top(self) -> float:
-        return self.y + self.h / 2
-
-    def bottom(self) -> float:
-        return self.y - self.h / 2
-
-    def right(self) -> float:
+    @property
+    def cx(self) -> float:
         return self.x + self.w / 2
 
+    @property
+    def cy(self) -> float:
+        return self.y + self.h / 2
 
-def round_box(ax, x, y, w, h, *, facecolor="#FFFFFF",
-              edgecolor=LAYER_BORDER, lw=1.0, pad=0.0, rounding=0.02,
-              shadow=False):
-    """Draw a rounded rectangle (FancyBboxPatch) by its lower-left corner."""
-    if shadow:
-        sh = FancyBboxPatch(
-            (x + 0.05, y - 0.05),
-            w - 2 * pad,
-            h - 2 * pad,
-            boxstyle=f"round,pad={pad},rounding_size={rounding}",
-            linewidth=0, edgecolor="none", facecolor="#00000022", zorder=1)
-        ax.add_patch(sh)
+    @property
+    def left(self) -> float:
+        return self.x
+
+    @property
+    def right(self) -> float:
+        return self.x + self.w
+
+    @property
+    def top(self) -> float:
+        return self.y + self.h
+
+    @property
+    def bottom(self) -> float:
+        return self.y
+
+
+# Canvas and palette tuned to the provided reference figure.
+W, H = 16.0, 10.5
+LEFT_W = 2.55
+CONTENT_X0 = LEFT_W + 0.18
+CONTENT_X1 = W - 0.18
+TOP, BOTTOM = 10.25, 0.25
+ROW_H = (TOP - BOTTOM) / 7
+
+BG = "#FFFFFF"
+LEFT_BG = "#F1F5F9"
+GRID = "#2F2F2F"
+TEXT = "#111111"
+MUTED = "#333333"
+LINE = "#111111"
+ARROW = "#111111"
+BLUE = "#355FA8"
+BLUE_FILL = "#F1F6FF"
+GREEN = "#5B7F58"
+GREEN_FILL = "#F2F8F1"
+AMBER = "#A87938"
+AMBER_FILL = "#FFF8E8"
+PURPLE = "#8A72B6"
+PURPLE_FILL = "#F7F3FF"
+RESULT_BLUE = "#4F78A8"
+RESULT_FILL = "#F2F8FF"
+RED = "#D34A3A"
+
+
+def row_rect(index: int) -> Rect:
+    """Return row rectangle for 0-based top-to-bottom layer index."""
+    y = TOP - (index + 1) * ROW_H
+    return Rect(0, y, W, ROW_H)
+
+
+def content_rect(index: int, pad_x: float = 0.1, pad_y: float = 0.16) -> Rect:
+    r = row_rect(index)
+    return Rect(CONTENT_X0 + pad_x, r.y + pad_y, CONTENT_X1 - CONTENT_X0 - 2 * pad_x, r.h - 2 * pad_y)
+
+
+def rounded(ax, rect: Rect, *, fc: str = "white", ec: str = LINE, lw: float = 1.0,
+            radius: float = 0.055, ls: str | tuple = "-", z: int = 2) -> FancyBboxPatch:
     patch = FancyBboxPatch(
-        (x + pad, y + pad),
-        w - 2 * pad,
-        h - 2 * pad,
-        boxstyle=f"round,pad={pad},rounding_size={rounding}",
+        (rect.x, rect.y),
+        rect.w,
+        rect.h,
+        boxstyle=f"round,pad=0.012,rounding_size={radius}",
+        facecolor=fc,
+        edgecolor=ec,
         linewidth=lw,
-        edgecolor=edgecolor,
-        facecolor=facecolor,
-        zorder=2,
+        linestyle=ls,
+        zorder=z,
     )
     ax.add_patch(patch)
+    return patch
 
 
-def draw_layer_band(ax, x0, y0, w, h, header_cn, header_en, fill, accent):
-    """Full-width soft-filled band with a header chip on the top-left."""
-    round_box(ax, x0, y0, w, h, facecolor=fill, edgecolor=LAYER_BORDER,
-              lw=1.3, rounding=0.012)
-    # header chip (small colored rounded label)
-    chip_w, chip_h = 3.5, 0.42
-    round_box(ax, x0 + 0.22, y0 + h - chip_h - 0.20, chip_w, chip_h,
-              facecolor=accent, edgecolor="none", rounding=0.08)
-    ax.text(x0 + 0.22 + chip_w / 2, y0 + h - chip_h / 2 - 0.02,
-            f"{header_cn}  {header_en}",
-            ha="center", va="center", color="white", fontsize=9.5,
-            fontproperties=CN, fontweight="bold", zorder=3)
+def label(ax, x: float, y: float, text: str, *, size: float = 8.0,
+          weight: str = "normal", ha: str = "center", va: str = "center",
+          color: str = TEXT, style: str = "normal", z: int = 5) -> None:
+    ax.text(
+        x,
+        y,
+        text,
+        ha=ha,
+        va=va,
+        fontsize=size,
+        fontproperties=FONT,
+        fontweight=weight,
+        fontstyle=style,
+        color=color,
+        zorder=z,
+    )
 
 
-def draw_component_box(ax, b: Box):
-    """White rounded component box with bold title + small subtitle."""
-    round_box(ax, b.left(), b.bottom(), b.w, b.h,
-              facecolor="#FFFFFF", edgecolor=b.accent, lw=1.3, rounding=0.05,
-              shadow=True)
-    ax.text(b.x, b.y + (0.20 if b.subtitle else 0.0),
-            b.title, ha="center", va="center",
-            color=TEXT_DARK, fontsize=10.2, fontproperties=CN,
-            fontweight="bold", zorder=3)
-    if b.subtitle:
-        ax.text(b.x, b.y - 0.24, b.subtitle, ha="center", va="center",
-                color=TEXT_MID, fontsize=7.9, fontproperties=CN, zorder=3)
+def arrow(ax, start: tuple[float, float], end: tuple[float, float], *,
+          color: str = ARROW, lw: float = 1.1, ls: str | tuple = "-",
+          ms: float = 10, rad: float = 0.0, z: int = 6) -> None:
+    ax.add_patch(
+        FancyArrowPatch(
+            start,
+            end,
+            arrowstyle="-|>",
+            mutation_scale=ms,
+            linewidth=lw,
+            linestyle=ls,
+            color=color,
+            connectionstyle=f"arc3,rad={rad}",
+            zorder=z,
+        )
+    )
 
 
-def arrow(ax, p1, p2, *, color=ARROW_MAIN, ls="-", lw=1.7,
-          label=None, label_offset=(0.0, 0.14), rad=0.0, label_color=None):
-    """Styled arrow between two (x, y) points with an optional text label."""
-    conn = f"arc3,rad={rad}" if rad else "arc3"
-    ax.add_patch(FancyArrowPatch(
-        p1, p2, arrowstyle="-|>", mutation_scale=15,
-        color=color, lw=lw, linestyle=ls, zorder=4,
-        connectionstyle=conn,
-    ))
-    if label:
-        mx = (p1[0] + p2[0]) / 2 + label_offset[0]
-        my = (p1[1] + p2[1]) / 2 + label_offset[1]
-        ax.text(mx, my, label, ha="center", va="center",
-                color=label_color or TEXT_MID, fontsize=7.4,
-                fontproperties=CN, zorder=5,
-                bbox=dict(boxstyle="round,pad=0.18", fc="white",
-                          ec="none", alpha=0.9))
+def double_arrow(ax, start: tuple[float, float], end: tuple[float, float], *,
+                 color: str = ARROW, lw: float = 1.0, ms: float = 10) -> None:
+    ax.add_patch(
+        FancyArrowPatch(
+            start,
+            end,
+            arrowstyle="<->",
+            mutation_scale=ms,
+            linewidth=lw,
+            color=color,
+            zorder=6,
+        )
+    )
 
 
-# --------------------------------------------------------------------------- #
-# Figure layout
-# --------------------------------------------------------------------------- #
-W, H = 16.0, 11.0          # canvas units
-MARGIN_X = 0.6
-band_x0 = MARGIN_X
-band_w = W - 2 * MARGIN_X
-band_h = 1.62
-band_gap = 0.46
+def draw_user_icon(ax, x: float, y: float, scale: float = 1.0) -> None:
+    ax.add_patch(Circle((x, y + 0.12 * scale), 0.105 * scale, color="black", zorder=6))
+    ax.add_patch(Wedge((x, y - 0.08 * scale), 0.23 * scale, 0, 180, color="black", zorder=6))
 
-fig, ax = plt.subplots(figsize=(16, 11), dpi=150)
-ax.set_xlim(0, W)
-ax.set_ylim(0, H)
-ax.axis("off")
-fig.patch.set_facecolor(CANVAS_BG)
 
-# ---- Designer node (top, centered) ----
-designer_y = H - 0.75
-designer = Box(W / 2, designer_y, 2.4, 0.72,
-               "设计者  Designer", "Human in the loop", "#2B2B2B")
-round_box(ax, designer.left(), designer.bottom(), designer.w, designer.h,
-          facecolor="#FFFFFF", edgecolor="#2B2B2B", lw=1.8, rounding=0.12)
-ax.text(designer.x, designer.y + 0.1, designer.title, ha="center",
-        va="center", color=TEXT_DARK, fontsize=9.5, fontproperties=CN,
-        fontweight="bold", zorder=3)
-ax.text(designer.x, designer.y - 0.2, designer.subtitle, ha="center",
-        va="center", color=TEXT_MID, fontsize=7.0, fontproperties=CN, zorder=3)
+def mini_card(ax, rect: Rect, title: str, subtitle: str = "", *,
+              ec: str = BLUE, fc: str = "#FFFFFF", title_size: float = 6.4) -> None:
+    rounded(ax, rect, fc=fc, ec=ec, lw=0.8, radius=0.04)
+    label(ax, rect.cx, rect.cy + (0.08 if subtitle else 0.0), title,
+          size=title_size, weight="bold")
+    if subtitle:
+        label(ax, rect.cx, rect.cy - 0.16, subtitle, size=5.4, color=MUTED)
 
-# ---- Layer bands (top-down) ----
-# Place bands below the designer node.
-top_band_top = designer_y - 0.95
-centers_y = []  # remember the band vertical center for arrows
-band_rects = []
-cur_top = top_band_top
-for i, (hcn, hen, fill, accent) in enumerate(LAYERS):
-    y0 = cur_top - band_h          # lower-left y
-    draw_layer_band(ax, band_x0, y0, band_w, band_h,
-                    hcn, hen, fill, accent)
-    centers_y.append(y0 + band_h / 2)
-    band_rects.append((band_x0, y0, band_w, band_h, accent))
-    cur_top = y0 - band_gap
 
-# ---- Component boxes inside each band ----
-bw, bh = 2.75, 0.92
-cy_band = {i: c for i, c in enumerate(centers_y)}
+def section_box(ax, rect: Rect, title: str, *, ec: str, fc: str, title_y: float = 0.16) -> None:
+    rounded(ax, rect, fc=fc, ec=ec, lw=1.0, radius=0.06)
+    label(ax, rect.cx, rect.top - title_y, title, size=8.4, weight="bold")
 
-# Layer 1: User Input — three boxes
-l1 = [
-    Box(4.6, cy_band[0], bw, bh, "自然语言描述",
-        "Natural-language prompt", "#475569"),
-    Box(8.0, cy_band[0], bw, bh, "建筑图纸",
-        "Drawings (plan/elevation/section)", "#475569"),
-    Box(11.4, cy_band[0], bw, bh, "气象文件 EPW",
-        "Weather file", "#475569"),
-]
-# Layer 2: Intent Parsing
-intake = Box(6.3, cy_band[1], 3.2, bh, "多模态大语言模型",
-             "Multimodal LLM", "#2F6FB0")
-intent = Box(10.9, cy_band[1], 3.2, bh, "结构化建筑意图",
-             "Structured output (IntakeOutput)", "#2F6FB0")
-# Layer 3: RAG
-ref = Box(6.3, cy_band[2], 3.2, bh, "EnergyPlus 参考库",
-          "Materials / Constructions / Schedules / Design days", "#3F8A5A")
-retr = Box(10.9, cy_band[2], 3.2, bh, "向量检索",
-           "Vector retrieval (Qdrant + Gemini)", "#3F8A5A")
-# Layer 4: Agent Orchestration — four evenly spaced boxes in a row
-_l4w = 2.65
-_l4_centers = [3.45, 7.05, 10.65, 14.05]
-orch = Box(_l4_centers[0], cy_band[3], _l4w, bh, "多阶段 Agent 编排",
-           "LangGraph workflow", "#C8794A")
-mcp = Box(_l4_centers[1], cy_band[3], _l4w, bh, "MCP 工具层",
-          "Structured CRUD · 10 object types", "#C8794A")
-cfg = Box(_l4_centers[2], cy_band[3], _l4w, bh, "中心配置状态",
-          "ConfigState (idfpy-backed)", "#C8794A")
-val = Box(_l4_centers[3], cy_band[3], _l4w, bh, "多层正确性保障",
-          "Schema + cross-ref + self-repair", "#C8794A")
-# Layer 5: Simulation & Results
-idf = Box(4.6, cy_band[4], bw, bh, "IDF 生成",
-          "IDF generation", "#7A4FB6")
-ep = Box(8.0, cy_band[4], bw, bh, "EnergyPlus 仿真",
-         "EnergyPlus simulation", "#7A4FB6")
-anz = Box(11.4, cy_band[4], bw, bh, "结果解析与可视化",
-          "Energy / EUI / comfort / peak / 3D solar", "#7A4FB6")
 
-for b in l1 + [intake, intent, ref, retr, orch, mcp, cfg, val, idf, ep, anz]:
-    draw_component_box(ax, b)
+def draw_layer_grid(ax) -> None:
+    # Outer frame and left layer column
+    ax.add_patch(plt.Rectangle((0, BOTTOM), W, TOP - BOTTOM, facecolor=BG, edgecolor=GRID, linewidth=1.0, zorder=0))
+    ax.add_patch(plt.Rectangle((0, BOTTOM), LEFT_W, TOP - BOTTOM, facecolor=LEFT_BG, edgecolor=GRID, linewidth=0.9, zorder=1))
+    ax.plot([LEFT_W, LEFT_W], [BOTTOM, TOP], color=GRID, linewidth=0.9, zorder=2)
 
-# ---- Arrows: designer -> inputs ----
-arrow(ax, (designer.x, designer.bottom()),
-      (l1[0].x, l1[0].top()), label="输入 input", rad=0.0)
-arrow(ax, (designer.x - 0.5, designer.bottom()),
-      (l1[1].x, l1[1].top()), ls=(0, (4, 3)))
-arrow(ax, (designer.x + 0.5, designer.bottom()),
-      (l1[2].x, l1[2].top()), ls=(0, (4, 3)))
+    layer_labels = [
+        "1. Interaction Layer",
+        "2. Agent Layer\n(LLM + MCP Tools)",
+        "3. Knowledge Layer\n(RAG)",
+        "4. State Layer\n(ConfigState)",
+        "5. Validation & Export\nLayer",
+        "6. Simulation Layer\n(EnergyPlus)",
+        "7. Result & Feedback\nLayer",
+    ]
+    for i, text in enumerate(layer_labels):
+        r = row_rect(i)
+        if i > 0:
+            ax.plot([0, W], [r.top, r.top], color=GRID, linewidth=0.8, linestyle=(0, (5, 4)), zorder=2)
+        label(ax, LEFT_W / 2, r.cy, text, size=8.2, weight="bold")
 
-# Layer 1 -> Layer 2 (text + drawings into LLM)
-arrow(ax, (l1[0].x, l1[0].bottom()), (intake.x, intake.top()))
-arrow(ax, (l1[1].x, l1[1].bottom()), (intake.x + 0.6, intake.top()),
-      ls=(0, (4, 3)))
-# EPW bypasses to IDF generation
-arrow(ax, (l1[2].x, l1[2].bottom()), (idf.x + 1.0, idf.top()),
-      ls=(0, (4, 3)), label="EPW", label_offset=(0.0, 0.0))
 
-# Layer 2 internal + -> RAG
-arrow(ax, (intake.right(), intake.y), (intent.left(), intent.y),
-      label="结构化输出")
-arrow(ax, (intent.x, intent.bottom()), (retr.x, retr.top()),
-      label="专业参数取值依据", label_offset=(1.6, 0.05), rad=-0.12)
-# RAG internal
-arrow(ax, (ref.right(), ref.y), (retr.left(), ref.y), label="索引")
+def draw_interaction(ax) -> Rect:
+    r = content_rect(0, pad_x=0.75, pad_y=0.23)
+    user = Rect(r.x + 0.25, r.y + 0.05, r.w - 0.5, r.h - 0.1)
+    rounded(ax, user, fc="#FFFFFF", ec=LINE, lw=0.8, radius=0.05)
+    draw_user_icon(ax, user.x + 0.92, user.cy, 1.0)
+    label(ax, user.x + 2.35, user.cy + 0.16, "User", size=10.8, weight="bold")
+    label(ax, user.x + 2.35, user.cy - 0.15, "(Architect / Designer / Engineer)", size=7.3)
+    label(ax, user.x + 6.05, user.cy + 0.20, "Natural Language Requirement + Drawings + EPW",
+          size=8.3, weight="bold", ha="left")
+    label(ax, user.x + 6.05, user.cy - 0.16,
+          '"Design a five-zone office in Shenzhen with low energy consumption."',
+          size=7.1, style="italic", ha="left")
+    return user
 
-# RAG -> orchestration
-arrow(ax, (retr.x, retr.bottom()), (orch.x, orch.top()),
-      label="检索记录", label_offset=(-1.8, 0.05), rad=0.12)
 
-# Layer 4 internal chain
-arrow(ax, (orch.right(), orch.y), (mcp.left(), mcp.y), label="调用工具")
-arrow(ax, (mcp.right(), mcp.y), (cfg.left(), cfg.y), label="读写对象")
-arrow(ax, (cfg.right(), cfg.y), (val.left(), val.y), label="校验")
+def draw_agent_layer(ax) -> tuple[Rect, Rect]:
+    r = content_rect(1, pad_x=0.10, pad_y=0.16)
+    agent = Rect(r.x, r.y + 0.02, 4.85, r.h - 0.04)
+    toolset = Rect(agent.right + 0.72, r.y + 0.02, r.right - agent.right - 0.72, r.h - 0.04)
 
-# Layer 4 -> Layer 5
-arrow(ax, (val.x - 0.5, val.bottom()), (idf.x + 1.0, idf.top()),
-      label="可运行模型", label_offset=(2.6, -0.05))
-# Layer 5 internal
-arrow(ax, (idf.right(), idf.y), (ep.left(), ep.y))
-arrow(ax, (ep.right(), ep.y), (anz.left(), anz.y))
+    section_box(ax, agent, "LLM Agent  (LangGraph workflow)", ec=BLUE, fc=BLUE_FILL, title_y=0.11)
+    section_box(ax, toolset, "MCP  (Model Context Protocol) Toolset", ec=BLUE, fc=BLUE_FILL, title_y=0.11)
 
-# ---- Feedback loop (dashed): results -> designer ----
-fb_start = (anz.right(), anz.y)
-fb_mid1 = (W - 0.25, anz.y)
-fb_mid2 = (W - 0.25, designer_y)
-fb_end = (designer.right(), designer.y)
-arrow(ax, fb_start, fb_mid1, color=ARROW_FEEDBACK,
-      ls=(0, (5, 4)), lw=1.6)
-arrow(ax, fb_mid1, fb_mid2, color=ARROW_FEEDBACK,
-      ls=(0, (5, 4)), lw=1.6)
-arrow(ax, fb_mid2, fb_end, color=ARROW_FEEDBACK,
-      ls=(0, (5, 4)), lw=1.6,
-      label="设计反馈 Design feedback（驱动下一轮迭代）",
-      label_offset=(-4.2, -0.55), label_color=ARROW_FEEDBACK)
+    chips = [
+        ("Intake /\nRevise", agent.x + 0.28),
+        ("Zone + Material\n+ Schedule", agent.x + 1.36),
+        ("Cross-ref\nFoundations", agent.x + 2.58),
+        ("Envelope:\nConstruction -> Surface -> Window", agent.x + 0.62),
+        ("Loads:\nHVAC + People + Lights", agent.x + 2.16),
+        ("Validate ->\nSimulate -> Analyze", agent.x + 3.62),
+    ]
+    chip_w = [0.85, 1.06, 1.06, 1.35, 1.25, 1.18]
+    chip_y_top = agent.y + 0.41
+    chip_y_bot = agent.y + 0.08
+    for idx, ((text, x), w) in enumerate(zip(chips[:3], chip_w[:3])):
+        mini_card(ax, Rect(x, chip_y_top, w, 0.30), text, ec=BLUE, fc="#FFFFFF", title_size=4.9)
+        if idx < 2:
+            arrow(ax, (x + w + 0.02, chip_y_top + 0.15), (chips[idx + 1][1] - 0.02, chip_y_top + 0.15), lw=0.8, ms=7)
+    for idx, ((text, x), w) in enumerate(zip(chips[3:], chip_w[3:])):
+        mini_card(ax, Rect(x, chip_y_bot, w, 0.30), text, ec=BLUE, fc="#FFFFFF", title_size=4.6)
+        if idx < 2:
+            arrow(ax, (x + w + 0.02, chip_y_bot + 0.15), (chips[4 + idx][1] - 0.02, chip_y_bot + 0.15), lw=0.8, ms=7)
+    arrow(ax, (chips[2][1] + chip_w[2] / 2, chip_y_top), (chips[3][1] + chip_w[3] / 2, chip_y_bot + 0.30), lw=0.8, ms=7, rad=0.08)
 
-# Self-repair dashed: validation errors -> orchestration (within L4)
-arrow(ax, (val.x, val.top() + 0.02), (orch.x, orch.top() + 0.02),
-      color="#C8794A", ls=(0, (3, 3)), lw=1.2, rad=-0.35,
-      label="校验错误回灌自修复", label_offset=(0.0, 0.16),
-      label_color="#A85A2A")
+    tool_titles = [
+        ("Building\nSite", "B"),
+        ("Zone\nTool", "Z"),
+        ("Material\nTool", "M"),
+        ("Construction\nTool", "C"),
+        ("Surface\nTool", "S"),
+        ("Window\nTool", "W"),
+        ("Schedule\nTool", "Sc"),
+        ("HVAC\nTool", "HV"),
+        ("People /\nLights", "L"),
+        ("Workflow /\nValidation", "WF"),
+    ]
+    card_gap = 0.08
+    card_w = (toolset.w - 0.42 - card_gap * (len(tool_titles) - 1)) / len(tool_titles)
+    card_h = 0.60
+    x = toolset.x + 0.21
+    y = toolset.y + 0.12
+    for title, icon in tool_titles:
+        card = Rect(x, y, card_w, card_h)
+        rounded(ax, card, fc="#FFFFFF", ec=BLUE, lw=0.75, radius=0.04)
+        label(ax, card.cx, card.top - 0.20, icon, size=8.6, weight="bold")
+        label(ax, card.cx, card.y + 0.18, title, size=5.0, weight="bold")
+        x += card_w + card_gap
 
-# ---- Caption / legend strip at bottom ----
-ax.text(W / 2, 0.32,
-        "图 1  EnergyPlus-Agent 总体架构  |  实线 = 主数据流，"
-        "虚线 = 反馈回路",
-        ha="center", va="center", fontsize=8.5, color=TEXT_MID,
-        fontproperties=CN)
+    double_arrow(ax, (agent.right + 0.08, agent.cy), (toolset.left - 0.08, toolset.cy), lw=0.9)
+    label(ax, agent.right + 0.36, agent.cy + 0.20, "MCP\nProtocol", size=5.8)
+    return agent, toolset
 
-plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-out = os.path.join(os.path.dirname(__file__), "..", "figures",
-                   "fig1_architecture.png")
-out = os.path.normpath(out)
-plt.savefig(out, dpi=200, facecolor=CANVAS_BG, bbox_inches="tight",
-            pad_inches=0.15)
-print(f"saved: {out}")
+
+def draw_knowledge_layer(ax) -> tuple[Rect, Rect]:
+    r = content_rect(2, pad_x=0.10, pad_y=0.16)
+    rag = Rect(r.x, r.y + 0.04, 4.15, r.h - 0.08)
+    kb = Rect(rag.right + 0.48, r.y + 0.04, r.right - rag.right - 0.48, r.h - 0.08)
+    section_box(ax, rag, "RAG Pipeline", ec=GREEN, fc=GREEN_FILL)
+    section_box(ax, kb, "Knowledge Base", ec=GREEN, fc=GREEN_FILL)
+
+    steps = ["Query\nUnderstanding", "Retrieval", "Re-ranking", "Context\nGeneration"]
+    sw, gap = 0.82, 0.16
+    x = rag.x + 0.22
+    y = rag.y + 0.22
+    for i, title in enumerate(steps):
+        mini_card(ax, Rect(x, y, sw, 0.55), title, ec=GREEN, title_size=5.2)
+        if i < len(steps) - 1:
+            arrow(ax, (x + sw + 0.01, y + 0.275), (x + sw + gap - 0.02, y + 0.275), lw=0.75, ms=7)
+        x += sw + gap
+
+    entries = [
+        "EnergyPlus\nDocs",
+        "IDD\nReference",
+        "Materials\nDatabase",
+        "Construction\nLibrary",
+        "Schedule /\nDesign Days",
+        "SQLite\nStorage",
+        "Qdrant\nVector DB",
+    ]
+    ew, egap = 0.86, 0.13
+    x = kb.x + 0.20
+    y = kb.y + 0.19
+    for i, title in enumerate(entries):
+        mini_card(ax, Rect(x, y, ew, 0.58), title, ec=GREEN, title_size=4.9)
+        if i == 4:
+            ax.plot([x + ew + egap / 2, x + ew + egap / 2], [y + 0.03, y + 0.55],
+                    color=GREEN, linestyle=(0, (4, 3)), linewidth=0.8, zorder=5)
+        x += ew + egap
+
+    double_arrow(ax, (rag.right + 0.05, rag.cy), (kb.left - 0.05, kb.cy), lw=0.9)
+    label(ax, kb.x + 0.72, kb.bottom + 0.06,
+          "Used by Material / Construction / Schedule / HVAC agents", size=5.6, color=MUTED, ha="left")
+    return rag, kb
+
+
+def draw_state_layer(ax) -> Rect:
+    r = content_rect(3, pad_x=0.10, pad_y=0.20)
+    state = Rect(r.x, r.y, r.w, r.h)
+    section_box(ax, state, "ConfigState  (idfpy-backed Building Configuration State)", ec=AMBER, fc=AMBER_FILL, title_y=0.20)
+    items = [
+        "Building /\nSite",
+        "Zones",
+        "Materials",
+        "Constructions",
+        "Surfaces",
+        "Fenestrations",
+        "Schedules",
+        "HVAC",
+        "People /\nLights",
+        "Output\nVariables",
+    ]
+    gap = 0.16
+    iw = (state.w - 0.55 - gap * (len(items) - 1)) / len(items)
+    x = state.x + 0.27
+    y = state.y + 0.12
+    for item in items:
+        mini_card(ax, Rect(x, y, iw, 0.30), item, ec=AMBER, fc="#FFFDF7", title_size=4.7)
+        rounded(ax, Rect(x, y, iw, 0.30), fc="none", ec=AMBER, lw=0.55, radius=0.035, ls=(0, (4, 3)), z=7)
+        x += iw + gap
+    return state
+
+
+def draw_validation_layer(ax) -> tuple[Rect, Rect, Rect]:
+    r = content_rect(4, pad_x=0.10, pad_y=0.16)
+    v = Rect(r.x, r.y + 0.03, 3.6, r.h - 0.06)
+    repair = Rect(v.right + 0.35, r.y + 0.03, 4.6, r.h - 0.06)
+    export = Rect(repair.right + 0.35, r.y + 0.03, r.right - repair.right - 0.35, r.h - 0.06)
+    section_box(ax, v, "Validation", ec=PURPLE, fc=PURPLE_FILL)
+    label(ax, v.x + 0.22, v.cy + 0.05,
+          "• Structured output / Pydantic Schema\n"
+          "• Geometry and surface closure checks\n"
+          "• Cross-reference validation",
+          size=6.0, ha="left")
+
+    section_box(ax, repair, "Self-Repair + Human Review", ec=PURPLE, fc=PURPLE_FILL)
+    sub = [
+        "Phase-local\nself repair",
+        "Directed\nrollback",
+        "Human-in-\nthe-loop",
+        "EnergyPlus\n.err feedback",
+    ]
+    sw, gap = 0.90, 0.18
+    x = repair.x + 0.30
+    for item in sub:
+        mini_card(ax, Rect(x, repair.y + 0.20, sw, 0.48), item, ec=PURPLE, title_size=4.9)
+        x += sw + gap
+
+    section_box(ax, export, "IDF Export", ec=PURPLE, fc=PURPLE_FILL)
+    label(ax, export.x + 0.25, export.cy - 0.02,
+          "• WorkflowTool.save_idf()\n"
+          "• IDF generation from ConfigState\n"
+          "• Consistency gate before run",
+          size=6.0, ha="left")
+    arrow(ax, (v.right + 0.05, v.cy), (repair.left - 0.05, repair.cy), lw=0.9)
+    arrow(ax, (repair.right + 0.05, repair.cy), (export.left - 0.05, export.cy), lw=0.9)
+    return v, repair, export
+
+
+def draw_simulation_layer(ax) -> Rect:
+    r = content_rect(5, pad_x=0.70, pad_y=0.23)
+    sim = Rect(r.x, r.y + 0.05, r.w, r.h - 0.10)
+    rounded(ax, sim, fc=RESULT_FILL, ec=RESULT_BLUE, lw=0.9, radius=0.05)
+    label(ax, sim.x + 2.40, sim.cy + 0.12, "EnergyPlus Simulation Engine", size=9.2, weight="bold")
+    label(ax, sim.x + 2.40, sim.cy - 0.17, "energyplus -x -w EPW -d output IDF", size=6.1)
+    metric_titles = ["Energy / EUI", "Thermal Comfort", "Peak Load", "Surface Solar", "Output Files"]
+    mw, gap = 1.36, 0.20
+    x = sim.x + 4.45
+    y = sim.y + 0.23
+    for title in metric_titles:
+        mini_card(ax, Rect(x, y, mw, 0.38), title, ec=RESULT_BLUE, title_size=5.3)
+        x += mw + gap
+    label(ax, sim.x + 0.70, sim.cy, "EnergyPlus", size=8.4, weight="bold", color="#C64232")
+    return sim
+
+
+def draw_result_layer(ax) -> tuple[Rect, Rect, Rect]:
+    r = content_rect(6, pad_x=0.25, pad_y=0.20)
+    viz = Rect(r.x, r.y + 0.05, 4.15, r.h - 0.10)
+    fb = Rect(viz.right + 0.38, r.y + 0.05, 4.10, r.h - 0.10)
+    refine = Rect(fb.right + 0.38, r.y + 0.05, r.right - fb.right - 0.38, r.h - 0.10)
+    section_box(ax, viz, "Results Visualization", ec=RESULT_BLUE, fc=RESULT_FILL)
+    label(ax, viz.cx, viz.cy - 0.04, "Dashboard   Charts   Reports   3D Model", size=6.2)
+    label(ax, viz.cx, viz.y + 0.20, "eplusout.csv / eplustbl / eplusout.eso", size=5.4, color=MUTED)
+
+    section_box(ax, fb, "Feedback to User", ec=RESULT_BLUE, fc=RESULT_FILL)
+    label(ax, fb.cx, fb.cy - 0.02,
+          "Insights, warnings, design trade-offs,\nand optimization suggestions.",
+          size=6.0)
+
+    section_box(ax, refine, "Iterative Refinement", ec=RESULT_BLUE, fc=RESULT_FILL)
+    label(ax, refine.cx, refine.cy - 0.02,
+          "User feedback -> revise node -> ConfigState update\n-> re-validation -> re-simulation",
+          size=5.8)
+    return viz, fb, refine
+
+
+def main() -> None:
+    fig, ax = plt.subplots(figsize=(16, 10.5), dpi=170)
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+    ax.set_xlim(0, W)
+    ax.set_ylim(0, H)
+    ax.axis("off")
+
+    draw_layer_grid(ax)
+    user = draw_interaction(ax)
+    agent, toolset = draw_agent_layer(ax)
+    rag, kb = draw_knowledge_layer(ax)
+    state = draw_state_layer(ax)
+    validation, repair, export = draw_validation_layer(ax)
+    sim = draw_simulation_layer(ax)
+    viz, feedback, refine = draw_result_layer(ax)
+
+    # Main flow arrows.
+    arrow(ax, (user.cx, user.bottom), (agent.cx, agent.top + 0.01), lw=1.1)
+    arrow(ax, (toolset.cx, toolset.bottom), (state.cx, state.top + 0.01), lw=1.1)
+    arrow(ax, (agent.cx, agent.bottom), (rag.x + 1.15, rag.top + 0.01), lw=1.0)
+    arrow(ax, (kb.cx, kb.bottom), (state.cx, state.top + 0.01), lw=1.0)
+    arrow(ax, (state.cx, state.bottom), (repair.cx, repair.top + 0.01), lw=1.1)
+    arrow(ax, (export.cx, export.bottom), (sim.cx, sim.top + 0.01), lw=1.1)
+    arrow(ax, (sim.cx, sim.bottom), (feedback.cx, feedback.top + 0.01), lw=1.1)
+    arrow(ax, (viz.right + 0.06, viz.cy), (feedback.left - 0.06, feedback.cy), lw=0.9)
+    arrow(ax, (feedback.right + 0.06, feedback.cy), (refine.left - 0.06, refine.cy), lw=0.9)
+
+    # RAG context returns to the RAG-enabled phase agents.
+    arrow(ax, (rag.right - 0.30, rag.top), (agent.x + 2.45, agent.bottom + 0.01), lw=0.9, rad=-0.08)
+    label(ax, agent.x + 2.75, rag.top + 0.08, "retrieved context", size=5.4, color=MUTED)
+
+    # Validation errors are routed back to owning agents.
+    arrow(ax, (validation.cx, validation.top), (agent.x + 3.50, agent.bottom + 0.01),
+          color=RED, lw=0.9, ls=(0, (4, 3)), rad=-0.15)
+    label(ax, validation.cx + 0.95, validation.top + 0.18, "validation errors -> self-repair", size=5.3, color=RED)
+
+    # Iterative feedback loop in the same visual language as the reference.
+    right_x = W - 0.12
+    arrow(ax, (refine.right, refine.cy), (right_x, refine.cy), color=RED, lw=1.0, ls=(0, (5, 4)), ms=8)
+    ax.plot([right_x, right_x], [refine.cy, user.cy], color=RED, linewidth=1.0, linestyle=(0, (5, 4)), zorder=5)
+    arrow(ax, (right_x, user.cy), (user.right, user.cy), color=RED, lw=1.0, ls=(0, (5, 4)), ms=8)
+
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    out = Path(__file__).resolve().parent.parent / "figures" / "fig1_architecture.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=220, facecolor=BG, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+    print(f"saved: {out}")
+
+
+if __name__ == "__main__":
+    main()
