@@ -4,13 +4,21 @@
 
 ## **EnergyPlus\-Agent：面向人机协同设计的 LLM 建筑能耗建模与仿真智能体**
 
-## 摘要（待写）
+## 摘要
 
-本文提出 EnergyPlus\-Agent，一个面向建筑设计阶段的检索增强型建筑能耗模拟智能体系统。系统结合大语言模型、LangGraph 多阶段智能体流程、MCP 工具编排、RAG 专业知识库、Pydantic/IDF 校验、EnergyPlus 仿真执行和结果解析可视化，实现从自然语言建筑描述到仿真结果反馈的闭环。后续摘要需要补充案例设置、实验指标和主要结果。
+EnergyPlus 是建筑能耗建模（BEM）的核心仿真引擎，但其输入对象繁多、跨引用关系复杂，使建模高度依赖专家、难以支持设计早期的快速迭代。现有 LLM 辅助 BEM 研究多面向既有建筑审计、城市尺度分析或一次性模型生成，存在设计阶段多轮交互支持不足、材料与构造等专业参数易产生幻觉、输入对象正确性缺乏多层保障、以及仿真输出难以直接转化为设计反馈等缺口。针对上述问题，本文提出 EnergyPlus\-Agent——一个面向建筑设计阶段的检索增强型建筑能耗模拟智能体系统。系统不让大语言模型直接编写 IDF，而是把自然语言文本与可选建筑图纸解析为结构化建筑意图，再通过基于 LangGraph 的多阶段 agent 编排（从基础对象到围护结构再到负荷系统）配合基于 Model Context Protocol 的工具层对 EnergyPlus 对象进行结构化创建与修改；引入 RAG 控制模块，使 agent 在生成材料热工参数、构造层次、日程曲线与设计日条件等关键物理量前先检索 EnergyPlus 参考库，将参数来源从“模型生成”约束为“检索取值”；并通过结构化输出、Pydantic Schema、跨引用校验、agent 自修复、人机审查与仿真报错反馈构成多层正确性保障。仿真完成后，系统自动解析 EnergyPlus 输出生成能耗、EUI、热舒适、峰值负荷、3D 热区能耗与外表面太阳辐照等设计者可理解的指标。本文以深圳单层 5 热区办公楼与多层中庭办公楼为案例，验证系统的端到端流程，并通过 RAG 消融实验量化检索增强对参数正确性与模型可运行性的作用。结果表明，EnergyPlus\-Agent 能把设计意图、专业参数、模型校验、仿真执行与结果反馈连接为一个面向设计者的协同闭环，显著降低 EnergyPlus 的建模门槛并减少参数幻觉。
 
-## 关键词（暂定）
+## Abstract
+
+EnergyPlus is a cornerstone simulation engine for building energy modeling (BEM), yet its numerous input objects and intricate cross\-reference relationships make modeling highly expert\-dependent and ill\-suited to the rapid iteration of early\-stage design. Existing LLM\-assisted BEM research mostly targets existing\-building audits, urban\-scale analysis, or one\-shot model generation, leaving gaps in design\-stage multi\-turn interaction, susceptibility to hallucination in professional parameters (materials, constructions, schedules), lack of multi\-layer guarantees on input correctness, and difficulty translating simulation outputs into actionable design feedback. To address these gaps, this paper proposes **EnergyPlus\-Agent**, a retrieval\-augmented agent system for building energy simulation at the design stage. Rather than letting a large language model author IDF directly, the system parses natural\-language text and optional architectural drawings into structured building intent, then orchestrates object creation through a LangGraph multi\-stage agent workflow (from foundation objects to envelope to load systems) backed by a Model Context Protocol tool layer. A RAG control module forces agents to retrieve the EnergyPlus reference library before emitting key physical quantities—thermal properties, construction layers, schedule profiles, and design\-day conditions—constraining the source of parameters from “generation” to “retrieval.” Correctness is safeguarded by structured output, Pydantic schemas, cross\-reference validation, agent self\-repair, human\-in\-the\-loop review, and EnergyPlus error feedback. After simulation, the system parses EnergyPlus outputs into designer\-interpretable metrics—energy use, EUI, thermal comfort, peak load, 3D zone energy, and exterior solar irradiance. Two Shenzhen cases (a single\-zone five\-zone office and a multi\-zone atrium office) validate the end\-to\-end pipeline, and a RAG ablation quantifies retrieval augmentation's effect on parameter correctness and model runnability. Results show that EnergyPlus\-Agent links design intent, professional parameters, model validation, simulation, and result feedback into a collaborative loop for designers, substantially lowering the EnergyPlus modeling barrier and reducing parameter hallucination.
+
+## 关键词
 
 建筑能耗建模；EnergyPlus；大语言模型；多智能体系统；检索增强生成；Model Context Protocol；早期设计；人机协同
+
+## Keywords
+
+Building energy modeling; EnergyPlus; Large language model; Multi\-agent system; Retrieval\-augmented generation; Model Context Protocol; Early\-stage design; Human\-AI collaboration
 
 ## 论文结构总览
 
