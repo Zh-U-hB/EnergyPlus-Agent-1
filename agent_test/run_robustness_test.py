@@ -81,6 +81,7 @@ from loguru import logger
 from src.agent import AgentState, SimContext, build_graph
 from src.agent.runner import run_session
 from src.agent.trace import export_traces, reset_traces
+from src.results.err_parser import extract_errors
 
 # ---------------------------------------------------------------------------
 # Configuration defaults
@@ -400,7 +401,7 @@ class CaseHarness:
         has_idf_in_msg = "idf=" in msg.lower() and "error" not in msg.lower()
         produced_output, out_files, err_path = _check_simulation_output(self.output_dir)
         self.result.output_files = out_files
-        err_info = _parse_eplusout_err(err_path)
+        err_info = extract_errors(err_path)
         self.result.err_fatal_count = err_info["fatal"]
         self.result.err_severe_count = err_info["severe"]
         self.result.err_warning_count = err_info["warning"]
@@ -471,41 +472,9 @@ def _check_simulation_output(output_dir: Path) -> tuple[bool, list[str], Path | 
     return bool(artifacts), artifacts, err_path
 
 
-def _parse_eplusout_err(err_path: Path | None) -> dict[str, Any]:
-    """Count severity lines in eplusout.err.
-
-    EnergyPlus writes one line per diagnostic, tagged like
-    ``** Fatal **``, ``** Severe **``, ``** Warning **``. We treat
-    Fatal and Severe as "Error level" (must not be present for the run
-    to count as clean); Warning is informational and ignored.
-
-    Returns a dict with counts + a boolean ``has_error_level``.
-    """
-    counts = {"fatal": 0, "severe": 0, "warning": 0, "has_error_level": False}
-    if err_path is None or not err_path.exists():
-        return counts
-    try:
-        text = err_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return counts
-    # EnergyPlus severity tags look like:
-    #   "   ** Severe  ** checkSubSurfAzTiltNorm: ..."
-    # Note the number of spaces between the keyword and the "**" markers
-    # varies (e.g. "** Fatal **" vs "** Severe  **" with two spaces), so we
-    # match with a flexible regex, not a fixed substring.
-    for line in text.splitlines():
-        m = re.match(r"\s*\*\*\s*(Fatal|Severe|Warning)\s*\*\*", line, re.IGNORECASE)
-        if not m:
-            continue
-        level = m.group(1).lower()
-        if level == "fatal":
-            counts["fatal"] += 1
-        elif level == "severe":
-            counts["severe"] += 1
-        elif level == "warning":
-            counts["warning"] += 1
-    counts["has_error_level"] = (counts["fatal"] + counts["severe"]) > 0
-    return counts
+# ---------------------------------------------------------------------------
+# err severity parsing is provided by src.results.err_parser (shared with the
+# agent's simulate_node). See ``extract_errors`` imported above.
 
 
 # ---------------------------------------------------------------------------
