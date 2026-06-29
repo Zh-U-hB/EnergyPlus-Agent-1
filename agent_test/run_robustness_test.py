@@ -151,6 +151,14 @@ class CaseResult:
     err_severe_count: int = 0
     err_warning_count: int = 0
     err_has_error_level: bool = False  # Fatal 或 Severe 之一出现 -> True
+    # Per-simulate-round error evolution timeline. One entry per simulate
+    # execution (incl. each rollback re-run), each a dict:
+    #   {"round": <1-based>, "success": <bool>,
+    #    "fatal": <n>, "severe": <n>, "warning": <n>,
+    #    "severe_lines": [...], "fixed_vs_prev": [...], "new_vs_prev": [...]}
+    # fixed_vs_prev / new_vs_prev let you see what was repaired and what was
+    # newly introduced relative to the previous round.
+    sim_rounds: list[dict[str, Any]] = field(default_factory=list)
 
     # --- misc ---
     elapsed_s: float = 0.0
@@ -383,6 +391,59 @@ class CaseHarness:
                 if content:
                     self.result.simulate_message = str(content)
                     break
+            # Record this simulate round's err snapshot for the evolution
+            # timeline (what was fixed / newly introduced vs the prev round).
+            self._record_sim_round()
+
+    def _record_sim_round(self) -> None:
+        """Snapshot this simulate round's eplusout.err into sim_rounds.
+
+        Each round records fatal/severe/warning counts + the severe error
+        line texts, plus (from round 2 on) what was FIXED vs the previous
+        round and what was NEWLY introduced. This lets the report show the
+        agent's repair trajectory across the simulate->revise loop.
+        """
+        err_path = Path(self.output_dir) / "eplusout.err"
+        info = extract_errors(err_path)
+        round_no = len(self.result.sim_rounds) + 1
+        severe_lines = info["severe_lines"]
+        fatal_lines = info["fatal_lines"]
+        entry: dict[str, Any] = {
+            "round": round_no,
+            "success": not info["has_error_level"],
+            "fatal": info["fatal"],
+            "severe": info["severe"],
+            "warning": info["warning"],
+            "severe_lines": severe_lines,
+            "fatal_lines": fatal_lines,
+            "fixed_vs_prev": [],
+            "new_vs_prev": [],
+            "changed_count_vs_prev": [],
+        }
+        # Compare against the previous round's severe errors. EnergyPlus emits
+        # one line per offending object, so the SAME error text can repeat N
+        # times (e.g. 15 windows with bad winding => 15 identical lines). A
+        # plain set diff collapses those and hides a 15->9 reduction. We use
+        # a Counter (multiset) diff so the report reflects both error TYPES
+        # changing and error COUNTS changing.
+        if self.result.sim_rounds:
+            from collections import Counter
+
+            prev_counts = Counter(self.result.sim_rounds[-1].get("severe_lines", []))
+            curr_counts = Counter(severe_lines)
+            # Fixed: present in prev but gone (or reduced) in curr.
+            entry["fixed_vs_prev"] = [
+                f"{msg}  (-{prev_counts[msg] - curr_counts[msg]})"
+                for msg in sorted(prev_counts)
+                if curr_counts[msg] < prev_counts[msg]
+            ]
+            # Newly introduced: new message type, or increased count.
+            entry["new_vs_prev"] = [
+                f"{msg}  (+{curr_counts[msg] - prev_counts[msg]})"
+                for msg in sorted(curr_counts)
+                if curr_counts[msg] > prev_counts[msg]
+            ]
+        self.result.sim_rounds.append(entry)
 
     # ---- final verdict computation ----
     def finalize(self, final_state: dict[str, Any]) -> None:
@@ -757,6 +818,55 @@ def write_reports(
     lines.append("")
     lines.append("> `errors@1st-validate` = cross-ref errors at the agent's first")
     lines.append("> validate hit (0 ⇒ clean first pass; matches `first_pass`).")
+
+    # Simulation error evolution across the simulate->revise loop. Only the
+    # cases that ran more than one simulate round (i.e. triggered a rollback)
+    # are interesting; single-round clean runs are omitted for brevity.
+    multi_round = [r for r in results if len(r.sim_rounds) > 1]
+    if multi_round:
+        lines += [
+            "",
+            "## Simulation error evolution (simulate→revise loop)",
+            "",
+            "Each row = one simulate round within a case. `fixed`/`new` are vs the",
+            "previous round's severe errors — they show what the agent repaired and",
+            "what it newly introduced each rollback.",
+            "",
+        ]
+        for r in multi_round:
+            lines.append(f"### {r.case_id} (rep {r.repeat_index}, "
+                         f"{len(r.sim_rounds)} simulate rounds)")
+            lines.append("")
+            lines.append("| round | success | fatal | severe | warning | fixed vs prev | new vs prev |")
+            lines.append("|-------|---------|-------|--------|---------|---------------|-------------|")
+            for s in r.sim_rounds:
+                lines.append(
+                    f"| {s['round']} | {'✅' if s['success'] else '❌'} "
+                    f"| {s['fatal']} | {s['severe']} | {s['warning']} "
+                    f"| {len(s.get('fixed_vs_prev', []))} "
+                    f"| {len(s.get('new_vs_prev', []))} |"
+                )
+            # Show the actual error texts for rounds that fixed or introduced
+            # something (the most diagnostic part).
+            for s in r.sim_rounds:
+                fixed = s.get("fixed_vs_prev", [])
+                new = s.get("new_vs_prev", [])
+                if not fixed and not new:
+                    continue
+                lines.append("")
+                lines.append(f"<details><summary>round {s['round']} detail</summary>")
+                lines.append("")
+                if fixed:
+                    lines.append(f"**Fixed ({len(fixed)}):**")
+                    for e in fixed:
+                        lines.append(f"- {e}")
+                if new:
+                    lines.append(f"**Newly introduced ({len(new)}):**")
+                    for e in new:
+                        lines.append(f"- {e}")
+                lines.append("")
+                lines.append("</details>")
+            lines.append("")
     (out_dir / "report.md").write_text("\n".join(lines), encoding="utf-8")
 
     logger.info("reports written to {}", out_dir)
