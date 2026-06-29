@@ -88,12 +88,19 @@ Approving lets every case reach the `simulate` node so we always get
 | `first_validate_errors` | cross-ref error count at the *first* validate hit |
 | `cross_ref_errors_seen` | every error surfaced across all validate hits |
 | `node_sequence` / `node_counts` | ordered node names + per-node execution counts |
+| `node_timings` | ordered timeline of `{node, duration_s}` per node execution (incl. re-runs on rollback); find which agent phase is slow |
+| `phase_total_s` | per-phase wall-clock totals (summed across re-runs), e.g. `{"surface": 45.3, ...}` |
 | `phase_traces` | full per-phase tool-call log (`export_traces()`) |
 | `phase_tool_stats` | per-phase aggregate: `{calls, succeeded, failed}` |
 | `idf_path` / `output_files` | the IDF path + list of produced result artifacts |
 | `err_fatal_count` / `err_severe_count` / `err_warning_count` | severity line counts in `eplusout.err` |
 | `err_has_error_level` | True if any Fatal/Severe present |
 | `elapsed_s` / `repeat_index` / `error` | wall time / which repetition / crash traceback |
+
+The report also surfaces timing: `summary.json` carries `avg_phase_s`
+(average wall-clock per phase, sorted slowest-first) and the per-run table
+has a `slowest phase` column — useful to see at a glance whether surface
+modelling, fenestration, or something else dominates agent time.
 
 ## Usage
 

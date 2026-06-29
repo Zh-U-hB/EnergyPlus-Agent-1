@@ -129,6 +129,14 @@ class CaseResult:
     # --- node execution diagnostics ---
     node_sequence: list[str] = field(default_factory=list)  # 按真实执行顺序的节点名
     node_counts: dict[str, int] = field(default_factory=dict)  # 每个节点执行了几次
+    # Per-node wall-clock timing timeline (ordered). Each entry is
+    # {"node": <name>, "duration_s": <float>} for one execution; a node that
+    # re-runs on rollback appears twice. Lets us see how long each agent
+    # phase (intake/zone/.../simulate/analyze) actually took.
+    node_timings: list[dict[str, Any]] = field(default_factory=list)
+    # Aggregated per-phase totals (sum across re-runs), e.g.
+    # {"surface": 45.3, "intake": 12.1, ...} — handy to find the slow phase.
+    phase_total_s: dict[str, float] = field(default_factory=dict)
 
     # --- per-phase tool-call diagnostics (from export_traces) ---
     phase_traces: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -300,6 +308,10 @@ class CaseHarness:
         self._first_errors: list[str] = []
         self._first_summary: dict | None = None
         self._approved = False
+        # Wall-clock anchor for per-node timing. Anchored at harness creation
+        # (~case start) so even the FIRST node (intake) gets a duration =
+        # first_callback_time - harness_creation_time.
+        self._last_node_t: float = time.perf_counter()
 
     # ---- interrupt handler (validate) ----
     def interrupt_handler(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -343,6 +355,17 @@ class CaseHarness:
     def event_handler(self, node: str, update: dict[str, Any]) -> None:
         if node in ("__interrupt__", "__end__", "__start__"):
             return
+        # Per-node timing: this callback fires AFTER the node finished, so
+        # the elapsed since the previous node (or harness creation for the
+        # first node) is this node's wall-clock duration.
+        now = time.perf_counter()
+        duration = round(now - self._last_node_t, 3)
+        self.result.node_timings.append({"node": node, "duration_s": duration})
+        self.result.phase_total_s[node] = round(
+            self.result.phase_total_s.get(node, 0.0) + duration, 3
+        )
+        self._last_node_t = now
+
         self.result.node_sequence.append(node)
         # Per-node execution count (e.g. construction executed twice => rollback).
         self.result.node_counts[node] = self.result.node_counts.get(node, 0) + 1
@@ -654,6 +677,17 @@ def write_reports(
         "total_err_warning": sum(r.err_warning_count for r in results),
     }
 
+    # Average per-phase wall-clock across all runs (find the slow phase).
+    phase_accum: dict[str, float] = {}
+    for r in results:
+        for phase, secs in r.phase_total_s.items():
+            phase_accum[phase] = phase_accum.get(phase, 0.0) + secs
+    summary["avg_phase_s"] = {
+        phase: round(total / n, 2) for phase, total in sorted(
+            phase_accum.items(), key=lambda kv: kv[1], reverse=True
+        )
+    }
+
     # Per-case stability across repetitions (when repeat > 1): for each case
     # id, how many of its repetitions were first-pass. A case that is
     # first-pass every time is "stable"; flaky cases flip-flop and are the
@@ -701,13 +735,25 @@ def write_reports(
         f"- err 统计: Fatal {summary['total_err_fatal']}  |  "
         f"Severe {summary['total_err_severe']}  |  "
         f"Warning {summary['total_err_warning']}",
+        f"- 各阶段平均耗时(s): "
+        + "  ".join(
+            f"{p} {s}" for p, s in summary["avg_phase_s"].items()
+        ),
         "",
         "## Per-run detail",
         "",
-        "| Case | rep | first_pass | model_clean | recovered | sim_ok | rollback | rebuild | validate× | err@1st | F/S/W | time(s) |",
-        "|------|-----|-----------|-------------|-----------|---------|----------|---------|-----------|---------|-------|---------|",
+        "| Case | rep | first_pass | model_clean | recovered | sim_ok | rollback | rebuild | validate× | err@1st | F/S/W | time(s) | slowest phase |",
+        "|------|-----|-----------|-------------|-----------|---------|----------|---------|-----------|---------|-------|---------|---------------|",
     ]
     for r in results:
+        # slowest phase for this run (name + seconds)
+        if r.phase_total_s:
+            slowest_phase, slowest_s = max(
+                r.phase_total_s.items(), key=lambda kv: kv[1]
+            )
+            slowest = f"{slowest_phase} {slowest_s}s"
+        else:
+            slowest = "-"
         lines.append(
             f"| {r.case_id} | {r.repeat_index} "
             f"| {'✅' if r.first_pass else '❌'} "
@@ -717,7 +763,7 @@ def write_reports(
             f"| {r.rollback_rounds} | {r.rebuild_count} | {r.validate_hits} "
             f"| {r.first_validate_errors} "
             f"| {r.err_fatal_count}/{r.err_severe_count}/{r.err_warning_count} "
-            f"| {r.elapsed_s} |"
+            f"| {r.elapsed_s} | {slowest} |"
         )
     if repeat > 1:
         lines += [
