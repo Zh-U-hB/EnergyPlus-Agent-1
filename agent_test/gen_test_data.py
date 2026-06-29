@@ -34,52 +34,60 @@ CASES_PER_BUCKET = 10
 # ---------------------------------------------------------------------------
 BUCKETS: dict[str, dict[str, dict]] = {
     "residential": {
+        # small: single-unit dwellings (studio / 1-2BR). Simplest geometry.
         "small": {
-            "area_range": (100, 150),       # m^2 total
+            "area_range": (45, 110),        # m^2 — one unit's footprint
             "floors": (1, 1),
-            "zones_per_floor": (1, 2),
+            "units_per_floor": (1, 1),
+            "zones_per_unit": (1, 2),
             "height": (2.8, 3.0),
-            "wwr_range": (0.12, 0.18),
-            "city": "Shenzhen",
-            "type_label": "Single-family detached house",
-            "rooms": [
-                "open-plan living + dining + kitchen",
-                "master bedroom + secondary bedroom + bathroom",
-                "living room, kitchen, one bedroom, one bathroom",
-                "studio-style living with separate bathroom",
-                "two bedrooms + living + kitchen + bathroom",
-            ],
-        },
-        "medium": {
-            "area_range": (180, 230),
-            "floors": (1, 2),
-            "zones_per_floor": (2, 3),
-            "height": (2.9, 3.1),
-            "wwr_range": (0.14, 0.20),
-            "city": "Guangzhou",
-            "type_label": "Townhouse / single-family house",
-            "rooms": [
-                "ground: living + dining + kitchen + utility; upper: 3 bedrooms + 2 baths",
-                "ground: garage + living + kitchen; upper: master suite + 2 bedrooms",
-                "ground: open living + kitchen + guest bedroom; upper: 2 bedrooms + study",
-                "ground: living + dining + kitchen; upper: 3 bedrooms + 2 bathrooms",
-                "single storey: 3 bedrooms + 2 baths + open living/kitchen",
-            ],
-        },
-        "large": {
-            "area_range": (250, 350),
-            "floors": (2, 3),
-            "zones_per_floor": (2, 4),
-            "height": (3.0, 3.3),
             "wwr_range": (0.15, 0.22),
             "city": "Shenzhen",
-            "type_label": "Large single-family villa",
+            "type_label": "Small apartment / studio unit",
             "rooms": [
-                "ground: foyer + living + dining + kitchen + guest suite; upper: master suite + 2 bedrooms + family room",
-                "ground: double garage + living + dining + kitchen; upper: 3 bedrooms + study; basement: home theater",
-                "3 storeys: ground living/kitchen, mid 3 bedrooms, top master suite + terrace",
-                "ground: open-plan living + kitchen + utility; upper: 4 bedrooms + 3 baths; basement: gym",
-                "2 storeys: ground great room + kitchen + study; upper: master + 3 bedrooms + lounge",
+                "open-plan studio: combined living/sleeping + kitchenette + bathroom",
+                "1-bedroom: living room + bedroom + kitchen + bathroom",
+                "1-bedroom: studio living + separate bedroom + bathroom + balcony",
+                "2-bedroom: living + dining + kitchen + 2 bedrooms + 1 bathroom",
+                "loft: open living/kitchen below, sleeping mezzanine + bathroom",
+            ],
+        },
+        # medium: low-rise multifamily (3 storeys, several stacked units).
+        # Introduces multiple dwellings and a shared core / circulation.
+        "medium": {
+            "area_range": (600, 1200),       # total building area
+            "floors": (3, 3),
+            "units_per_floor": (2, 4),
+            "zones_per_unit": (1, 2),
+            "height": (2.9, 3.1),
+            "wwr_range": (0.18, 0.28),
+            "city": "Guangzhou",
+            "type_label": "Low-rise multifamily apartment building",
+            "rooms": [
+                "per floor: 2 units (2B+1B each) + shared stairwell core",
+                "per floor: 3 units (1B/2B/2B) + elevator lobby + stair core",
+                "per floor: 2 corner units (3B+2B) + central corridor + stair",
+                "per floor: 4 compact units (1B each) + double-loaded corridor + core",
+                "per floor: 2 units (2B+1B) + shared lobby + stair + utility",
+            ],
+        },
+        # large: mid/high-rise apartment tower (10+ storeys, many units/floor).
+        # Most complex: vertical stacking, many dwellings, core + corridor.
+        "large": {
+            "area_range": (8000, 20000),     # total building area
+            "floors": (10, 18),
+            "units_per_floor": (4, 8),
+            "zones_per_unit": (1, 2),
+            "height": (3.0, 3.2),
+            "wwr_range": (0.25, 0.40),
+            "city": "Shenzhen",
+            "type_label": "High-rise apartment tower",
+            "rooms": [
+                "per typical floor: 6 units (mix of 1B-3B) + central core (2 lifts + stairs + lobby)",
+                "per typical floor: 8 compact units along double-loaded corridor + core",
+                "per typical floor: 4 corner units (3B-4B) + 2 lifts + stair + service core",
+                "per typical floor: 6 units + sky lobby + 2 lifts + stair + MEP shaft",
+                "per typical floor: 5 units (2B/3B) + elevator lobby + stair + garbage room",
             ],
         },
     },
@@ -204,10 +212,14 @@ def _pick(seq: list, i: int) -> str:
 def build_case(
     category: str, scale: str, params: dict, idx: int
 ) -> dict:
-    """Build one testdata_prompt dict for a (category, scale, idx)."""
+    """Build one testdata_prompt dict for a (category, scale, idx).
+
+    Supports two zone-count schemas:
+    - Multifamily (residential): ``units_per_floor`` + ``zones_per_unit``
+      -> zones/floor = units_per_floor * zones_per_unit.
+    - Simple (office/retail, legacy): ``zones_per_floor`` directly.
+    """
     floors = _mid(params["floors"])
-    zpf = int(round(_mid(params["zones_per_floor"])))
-    total_zones = int(round(floors * zpf))
     area_total = _mid(params["area_range"])
     per_floor = round(area_total / floors, 1)
     height = _mid(params["height"])
@@ -218,6 +230,18 @@ def build_case(
     city = params["city"]
     btype = params["type_label"]
 
+    # Multifamily vs simple zone derivation.
+    is_multifamily = "units_per_floor" in params
+    if is_multifamily:
+        upf = int(round(_mid(params["units_per_floor"])))
+        zpu = int(round(_mid(params["zones_per_unit"])))
+        zpf = upf * zpu          # thermal zones per floor
+        total_zones = int(round(floors * zpf))
+    else:
+        upf = None
+        zpf = int(round(_mid(params["zones_per_floor"])))
+        total_zones = int(round(floors * zpf))
+
     # Derive approximate footprint dimensions from per-floor area & aspect.
     # area = W * D;  W/D = aspect  ->  W = sqrt(area*aspect), D = sqrt(area/aspect)
     import math
@@ -225,6 +249,17 @@ def build_case(
     depth = round(math.sqrt(per_floor * d / w), 1)
 
     name = f"{category}_{scale}_{idx + 1:02d}"
+
+    # Multifamily-specific clause: surface dwelling-unit count so the agent
+    # knows to create stacked, repeated dwellings (not one big zone).
+    unit_clause = ""
+    if is_multifamily and upf:
+        unit_clause = (
+            f" There are {upf} dwelling units per floor "
+            f"({total_zones // max(int(floors), 1) // upf} thermal zone(s) per unit), "
+            f"so model each unit as its own zone(s) stacked vertically across "
+            f"the {int(floors)} floor(s), plus a shared core/circulation."
+        )
 
     description = (
         f"A {btype.lower()} located in {city}, China. "
@@ -234,7 +269,7 @@ def build_case(
         f"{area_total} m^2 spread over {int(floors)} floor(s), giving roughly "
         f"{per_floor} m^2 per floor. Floor-to-floor height is {height} m. "
         f"The building is divided into {total_zones} thermal zones in total "
-        f"(about {zpf} per floor). Typical space layout: {rooms}. "
+        f"(about {zpf} per floor).{unit_clause} Typical space layout: {rooms}. "
         f"Window-to-wall ratio is approximately {wwr:.0%} on exterior walls, "
         f"with windows distributed on all four facades. "
         f"Model all zones with appropriate constructions, glazing, occupancy, "
@@ -242,7 +277,7 @@ def build_case(
         f"EnergyPlus without errors."
     )
 
-    return {
+    data = {
         "TestName": name,
         "Building location": city,
         "Building type": btype,
@@ -264,6 +299,9 @@ def build_case(
         "Building side view path": "",
         "Path of the supplementary plan example drawing for the building": "",
     }
+    if is_multifamily:
+        data["Dwelling units per floor"] = str(upf)
+    return data
 
 
 def main() -> None:
