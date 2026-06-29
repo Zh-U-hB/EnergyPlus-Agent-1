@@ -488,14 +488,21 @@ def _parse_eplusout_err(err_path: Path | None) -> dict[str, Any]:
         text = err_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return counts
+    # EnergyPlus severity tags look like:
+    #   "   ** Severe  ** checkSubSurfAzTiltNorm: ..."
+    # Note the number of spaces between the keyword and the "**" markers
+    # varies (e.g. "** Fatal **" vs "** Severe  **" with two spaces), so we
+    # match with a flexible regex, not a fixed substring.
     for line in text.splitlines():
-        low = line.lower()
-        # EnergyPlus severity tags look like "   ** Fatal **  ..."
-        if "** fatal **" in low:
+        m = re.match(r"\s*\*\*\s*(Fatal|Severe|Warning)\s*\*\*", line, re.IGNORECASE)
+        if not m:
+            continue
+        level = m.group(1).lower()
+        if level == "fatal":
             counts["fatal"] += 1
-        elif "** severe **" in low:
+        elif level == "severe":
             counts["severe"] += 1
-        elif "** warning **" in low:
+        elif level == "warning":
             counts["warning"] += 1
     counts["has_error_level"] = (counts["fatal"] + counts["severe"]) > 0
     return counts
