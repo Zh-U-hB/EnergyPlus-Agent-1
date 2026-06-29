@@ -1,0 +1,20 @@
+{
+  "TestName": "residential_large_01",
+  "Building location": "Shenzhen",
+  "Building type": "Large single-family villa",
+  "Floor area": "300.0m2",
+  "Number of floors": "2",
+  "Number of thermal zones per floor of the building": "3",
+  "Number of total thermal zones in the building": "8",
+  "Footprint width (east-west, m)": "11.0",
+  "Footprint depth (north-south, m)": "11.0",
+  "Floor-to-floor height (m)": "3.1",
+  "Orientation (degrees from north)": "0",
+  "Window-to-wall ratio": "0.20",
+  "Space layout": "ground: foyer + living + dining + kitchen + guest suite; upper: master suite + 2 bedrooms + family room",
+  "Description": "A large single-family villa located in Shenzhen, China. The building footprint is approximately 11.0 m (east-west) by 11.0 m (north-south), rectangular, with the long axis rotated 0 degrees from north. Total gross floor area is about 300.0 m^2 spread over 2 floor(s), giving roughly 120.0 m^2 per floor. Floor-to-floor height is 3.1 m. The building is divided into 8 thermal zones in total (about 3 per floor). Typical space layout: ground: foyer + living + dining + kitchen + guest suite; upper: master suite + 2 bedrooms + family room. Window-to-wall ratio is approximately 20% on exterior walls, with windows distributed on all four facades. Model all zones with appropriate constructions, glazing, occupancy, lighting, equipment and HVAC (ideal loads) so the IDF runs in EnergyPlus without errors.",
+  "Top view path of the building": "",
+  "Front view path of the building": "",
+  "Building side view path": "",
+  "Path of the supplementary plan example drawing for the building": ""
+}

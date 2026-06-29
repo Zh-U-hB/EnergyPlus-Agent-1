@@ -85,7 +85,7 @@ from src.agent.trace import export_traces, reset_traces
 # ---------------------------------------------------------------------------
 # Configuration defaults
 # ---------------------------------------------------------------------------
-TEST_DATA_ROOT = REPO_ROOT / "agent_test" / "test_data" / "SmallOffice"
+TEST_DATA_ROOT = REPO_ROOT / "agent_test" / "test_data" / "text_only"
 DEFAULT_EPW = REPO_ROOT / "data" / "weather" / "Shenzhen.epw"
 RESULTS_DIR = REPO_ROOT / "agent_test" / "results"
 
@@ -153,21 +153,37 @@ class CaseResult:
 # Test-case discovery / prompt construction
 # ---------------------------------------------------------------------------
 def discover_cases(root: Path = TEST_DATA_ROOT) -> list[dict[str, Any]]:
-    """Load every ``testdata_prompt.json`` under ``root`` (sorted by id).
+    """Recursively load every ``testdata_prompt.json`` under ``root``.
 
-    Each returned item is ``{"id": <case id>, "data": <json dict>, "_dir":
-    <abs path of the case folder>}``. ``_dir`` lives at the top level (next
-    to ``id``) because it is case metadata, not part of the prompt JSON.
+    Supports nested directories (e.g. ``text_only/residential/large/case_03``).
+    Each returned item is::
+
+        {"id": <rel path str>, "data": <json dict>, "_dir": <abs path>,
+         "category": <str|None>, "scale": <str|None>}
+
+    The ``id`` is the case directory's path relative to ``root`` in POSIX
+    form (e.g. ``"residential/large/case_03"``), which is unique across the
+    whole tree and lets ``--only`` do prefix matching. ``category`` and
+    ``scale`` are sliced from the first two path segments when present, so
+    the report can aggregate per building-type / scale.
     """
     cases: list[dict[str, Any]] = []
-    for p in sorted(root.glob("*/testdata_prompt.json")):
+    for p in sorted(root.rglob("testdata_prompt.json")):
         with p.open(encoding="utf-8") as f:
             data = json.load(f)
-        # case id = parent dir name (e.g. smalloffice_11 -> "11")
-        m = re.search(r"(\d+)$", p.parent.name)
-        cid = m.group(1) if m else p.parent.name
+        rel = p.parent.relative_to(root)
+        cid = rel.as_posix()  # e.g. "residential/large/case_03"
+        parts = rel.parts
+        category = parts[0] if len(parts) >= 1 else None
+        scale = parts[1] if len(parts) >= 2 else None
         cases.append(
-            {"id": cid, "data": data, "_dir": str(p.parent.resolve())}
+            {
+                "id": cid,
+                "data": data,
+                "_dir": str(p.parent.resolve()),
+                "category": category,
+                "scale": scale,
+            }
         )
     return cases
 
@@ -178,9 +194,13 @@ def build_user_prompt(case: dict[str, Any]) -> str:
     The agent's intake node expects free-form text + optional images. We
     render the structured JSON fields into a compact English description so
     the same prompt works regardless of the LLM language setting.
+
+    Both the legacy numeric fields and the extended descriptive fields
+    (footprint, orientation, layout, ...) are supported; if a rich
+    ``Description`` block is present it is appended verbatim.
     """
     d = case["data"]
-    name = d.get("TestName") or f"SmallOffice_{case['id']}"
+    name = d.get("TestName") or f"building_{case['id']}"
     loc = d.get("Building location", "Shenzhen")
     btype = d.get("Building type", "Office")
     area = d.get("Floor area", "")
@@ -189,7 +209,7 @@ def build_user_prompt(case: dict[str, Any]) -> str:
     ztot = d.get("Number of total thermal zones in the building", "")
 
     lines = [
-        f"Please build an EnergyPlus IDF model for the following building.",
+        "Please build an EnergyPlus IDF model for the following building.",
         f"- Name: {name}",
         f"- Location: {loc}",
         f"- Building type: {btype}",
@@ -202,12 +222,31 @@ def build_user_prompt(case: dict[str, Any]) -> str:
         lines.append(f"- Thermal zones per floor: {zpf}")
     if ztot:
         lines.append(f"- Total thermal zones: {ztot}")
-    lines.append(
-        "Create all zones, materials, constructions, surfaces, fenestrations, "
-        "HVAC (ideal loads), people, lights and schedules so the resulting "
-        "IDF can run in EnergyPlus without errors. "
-        "Derive the zone layout and geometry from the counts above; keep the "
-        "footprint rectangular and dimensions reasonable for the stated area."
+    # Extended descriptive fields (text-only corpus). All optional.
+    for label, key in (
+        ("- Footprint width (east-west, m)", "Footprint width (east-west, m)"),
+        ("- Footprint depth (north-south, m)", "Footprint depth (north-south, m)"),
+        ("- Floor-to-floor height (m)", "Floor-to-floor height (m)"),
+        ("- Orientation (deg from north)", "Orientation (degrees from north)"),
+        ("- Window-to-wall ratio", "Window-to-wall ratio"),
+        ("- Space layout", "Space layout"),
+    ):
+        val = d.get(key)
+        if val:
+            lines.append(f"{label}: {val}")
+    # If a full prose description is provided, append it verbatim — it is the
+    # richest single source of modelling guidance for text-only runs.
+    desc = d.get("Description")
+    if desc:
+        lines.append("")
+        lines.append(desc.strip())
+    else:
+        lines.append(
+            "Create all zones, materials, constructions, surfaces, fenestrations, "
+            "HVAC (ideal loads), people, lights and schedules so the resulting "
+            "IDF can run in EnergyPlus without errors. "
+            "Derive the zone layout and geometry from the counts above; keep the "
+            "footprint rectangular and dimensions reasonable for the stated area."
     )
     return "\n".join(lines)
 
@@ -442,6 +481,36 @@ def _parse_eplusout_err(err_path: Path | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Per-case runner
 # ---------------------------------------------------------------------------
+def _render_case_top_view(harness: "CaseHarness", out_base: Path) -> None:
+    """Render a bird's-eye PNG for the case's produced IDF, if any.
+
+    Best-effort: a render failure only logs a warning and never affects the
+    test verdict. The IDF path comes from ``harness.result.idf_path`` (parsed
+    from the simulate message); if that is missing or stale we fall back to
+    globbing ``*.idf`` under the simulation output dir.
+    """
+    idf_path_str = harness.result.idf_path
+    idf_path: Path | None = None
+    if idf_path_str and Path(idf_path_str).exists():
+        idf_path = Path(idf_path_str)
+    else:
+        # Fallback: the simulate node writes temp_<ts>.idf into sim_out.
+        hits = sorted(Path(harness.output_dir).glob("**/*.idf"))
+        if hits:
+            idf_path = hits[-1]
+    if idf_path is None:
+        logger.info("[{}] no IDF found; skipping top-view render", harness.case["id"])
+        return
+    try:
+        from agent_test.render_top_view import render_top_view
+
+        out_png = out_base / "top_view.png"
+        render_top_view(idf_path, out_png)
+        logger.info("[{}] top-view rendered -> {}", harness.case["id"], out_png)
+    except Exception as e:  # rendering is best-effort
+        logger.warning("[{}] top-view render failed: {}", harness.case["id"], e)
+
+
 def run_one_case(
     case: dict[str, Any],
     epw: Path,
@@ -449,9 +518,19 @@ def run_one_case(
     timestamp: str,
     repeat_index: int = 0,
     use_images: bool = False,
+    data_root: Path | None = None,
 ) -> CaseResult:
     case_id = case["id"]
-    out_base = results_root / timestamp / f"case_{case_id}" / f"rep_{repeat_index}"
+    # Mirror the data tree into the results tree: results/<ts>/<rel>/rep_<i>.
+    # rel is the case dir relative to data_root (e.g. residential/large/case_03).
+    if data_root is not None:
+        try:
+            rel = Path(case["_dir"]).resolve().relative_to(data_root.resolve())
+        except ValueError:
+            rel = Path(case_id)
+    else:
+        rel = Path(case_id)
+    out_base = results_root / timestamp / rel / f"rep_{repeat_index}"
     harness = CaseHarness(case, out_base / "sim_out", repeat_index=repeat_index)
 
     # Per-case log file so each run is fully auditable.
@@ -493,6 +572,7 @@ def run_one_case(
         )
         harness.snapshot_traces()
         harness.finalize(dict(final_state))
+        _render_case_top_view(harness, out_base)
     except Exception as e:
         harness.result.error = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
         logger.exception("CASE {} crashed", case_id)
@@ -781,11 +861,19 @@ def main() -> None:
 
     all_cases = discover_cases(args.data_root)
     if args.only:
-        wanted = {s.strip() for s in args.only.split(",") if s.strip()}
-        cases = [c for c in all_cases if c["id"] in wanted]
-        missing = wanted - {c["id"] for c in cases}
-        if missing:
-            logger.warning("unknown case ids ignored: {}", sorted(missing))
+        # --only accepts comma-separated PREFIXES against the relative-path id,
+        # e.g. --only residential  (all residential)
+        #      --only office/large  (all large offices)
+        #      --only retail/small/case_03  (one case)
+        prefixes = tuple(s.strip() for s in args.only.split(",") if s.strip())
+        cases = [c for c in all_cases if c["id"].startswith(prefixes)]
+        if not cases:
+            logger.error(
+                "no cases matched --only prefixes {}; available ids: {}",
+                prefixes,
+                [c["id"] for c in all_cases][:10],
+            )
+            sys.exit(2)
     else:
         cases = all_cases
 
@@ -832,6 +920,7 @@ def main() -> None:
                     timestamp,
                     repeat_index=rep,
                     use_images=args.images,
+                    data_root=args.data_root,
                 )
                 results.append(res)
     finally:

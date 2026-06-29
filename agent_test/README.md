@@ -5,6 +5,26 @@ produce a **runnable IDF in one shot** — i.e. with zero automatic
 rollback rounds and no human intervention — across a corpus of building
 description cases.
 
+## Test corpus
+
+Cases live under `agent_test/test_data/<mode>/<category>/<scale>/case_<NN>/testdata_prompt.json`.
+Regenerate with `uv run python agent_test/gen_test_data.py` (90 cases,
+grounded in DOE Commercial Reference Buildings / PNNL prototype models /
+NIST TN 1765):
+
+```
+test_data/
+└── text_only/                      # text-only mode (drawings not passed)
+    ├── residential/{small,medium,large}/   # 10 cases each
+    ├── office/{small,medium,large}/        # 10 cases each
+    └── retail/{small,medium,large}/        # 10 cases each
+```
+
+Each `testdata_prompt.json` carries both the legacy numeric fields (area,
+floors, zone counts) and a detailed free-text `Description` (footprint
+dimensions, orientation, window-to-wall ratio, space layout) so the agent
+has enough to build geometry without drawings.
+
 ## What "first-pass success" means
 
 The agent graph validates cross-references in three places:
@@ -81,11 +101,16 @@ Approving lets every case reach the `simulate` node so we always get
 > on `PATH` must be configured. Run with `uv run` to use the project env.
 
 ```bash
-# all discovered cases (test/test_data/SmallOffice/smalloffice_*/testdata_prompt.json)
+# all discovered cases (recursively, under agent_test/test_data/text_only)
 uv run python agent_test/run_robustness_test.py
 
-# subset by case id
-uv run python agent_test/run_robustness_test.py --only 0,2,11
+# --only accepts comma-separated PREFIXES against the relative-path case id:
+#   --only residential            -> all residential (small/medium/large)
+#   --only office/large           -> all large offices
+#   --only retail/small/case_03   -> one case
+#   --only residential,office/large
+uv run python agent_test/run_robustness_test.py --only residential/small
+uv run python agent_test/run_robustness_test.py --only office/large/case_03
 
 # custom weather file
 uv run python agent_test/run_robustness_test.py --epw data/weather/Shenzhen.epw
@@ -99,7 +124,14 @@ uv run python agent_test/run_robustness_test.py --temperature 0.0
 # 3/5 times is "flaky"). Adds a "Per-case stability" table to the report.
 uv run python agent_test/run_robustness_test.py --repeat 5 --temperature 0.0
 
-# custom test-data root (must hold <case>/testdata_prompt.json subfolders)
+# pass building drawings as multimodal input (needs a vision-capable LLM).
+# OFF by default — the corpus is designed for text-only runs.
+uv run python agent_test/run_robustness_test.py --images
+
+# regenerate the test corpus (90 cases, grounded in DOE/NIST prototypes)
+uv run python agent_test/gen_test_data.py
+
+# custom test-data root (recursively scanned for testdata_prompt.json)
 uv run python agent_test/run_robustness_test.py --data-root path/to/cases
 ```
 
@@ -117,25 +149,41 @@ captured into `summary.json` for reproducibility.
 ### On `--repeat`
 
 Each `(case, repetition)` pair gets its own output dir
-(`case_<id>/rep_<i>/`) and its own `thread_id`, so repetitions are fully
+(`.../case_<rel>/rep_<i>/`) and its own `thread_id`, so repetitions are fully
 independent. When `--repeat > 1`, `summary.json` gains a
 `per_case_stability` block and the markdown report gains a stability table
 showing `first_pass_count / repetitions` per case.
 
 ## Output
 
-Everything is written under `agent_test/results/<timestamp>/`:
+Everything is written under `agent_test/results/<timestamp>/` (one dated
+folder per run, so multiple runs are easy to compare):
 
 ```
-results/<timestamp>/
-├── results.json     # full per-(case, repetition) record (every metric above)
+results/<timestamp>/                         # dated folder = one full run
+├── results.json     # full per-(case, repetition) record (every metric)
 ├── summary.json     # aggregate stats + per_case_stability (when repeat>1)
 ├── report.md        # human-readable per-run + per-case-stability tables
-└── case_<id>/
+└── <category>/<scale>/case_<NN>/            # MIRRORS the test-data tree
     └── rep_<i>/
-        ├── run.log      # full per-run log
-        └── sim_out/     # EnergyPlus output dir for that run (IDF, eplusout.*, …)
+        ├── run.log        # full per-run log
+        ├── top_view.png   # 3-D isometric bird's-eye view of the produced IDF
+        └── sim_out/       # EnergyPlus output (IDF, eplusout.*, eplustbl.csv, …)
 ```
+
+The results tree mirrors the test-data tree (e.g. a case found at
+`residential/large/case_03` writes its output to
+`results/<ts>/residential/large/case_03/rep_0/`), so a per-category or
+per-scale analysis is a simple directory walk.
+
+### Bird's-eye view (top_view.png)
+
+After each case's simulation, `agent_test/render_top_view.py` renders a
+3-D isometric PNG of the produced IDF (surfaces colored by thermal zone)
+alongside the run log. Rendering is best-effort: a failure only logs a
+warning and never affects the test verdict. It loads
+`src/results/idf_geometry.py` directly by file path (via importlib) to
+avoid pulling in `idfpy`, which is slow to import in this environment.
 
 ## How it drives the agent
 
