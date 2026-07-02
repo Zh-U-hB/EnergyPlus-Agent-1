@@ -8,6 +8,7 @@ from idfpy.models.constructions import (
     Material,
     MaterialAirGap,
     MaterialNoMass,
+    WindowMaterialGlazing,
     WindowMaterialSimpleGlazingSystem,
 )
 from src.mcp.state import ConfigState
@@ -22,6 +23,7 @@ _ALL_MATERIAL_TYPES = [
     "Material:NoMass",
     "Material:AirGap",
     "WindowMaterial:SimpleGlazingSystem",
+    "WindowMaterial:Glazing",
 ]
 
 # idfpy object-type strings for each construction variant. The plain
