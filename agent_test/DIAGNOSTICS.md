@@ -14,10 +14,10 @@
 | 最终 IDF 缺失的对象 | **Zone、BuildingSurface**（0 zone / 0 surface） | **BuildingSurface、FenestrationSurface**（8 zone / 0 surface） |
 | 仿真结果 | `Completed Successfully-- 0 Severe`（0.18 秒空跑） | `Fatal-- 8 Severe`（0.04 秒即终止） |
 | 测试判定 | `first_pass=True`（**假阳性**） | `first_pass` 待定，但仿真确为 Fatal |
-| 直接原因 | zone 并行分支 LLM 静默放弃（返回无 tool_calls 响应，零工具调用） | 第一轮 surface 在 `create_surface` 一次都没调用时就 back-hop 回 zone |
-| 共同根因 | agent graph 的并行 fan-out 分支在 LLM 异常响应时缺乏重试/兜底；回环（back-hop）逻辑过于激进；simulate 节点在残缺中间状态上跑仿真 |
+| 直接原因 | zone 并行分支 LLM 静默放弃（返回无 tool_calls 响应，零工具调用）；hvac 发现 missing Zone 后因**漏接 `maybe_backhop`** 无法回跳修复 | 第一轮 surface 在 `create_surface` 一次都没调用时就 back-hop 回 zone（surface 接了 maybe_backhop，回跳生效，但判定过激） |
+| 共同根因 | ① phase-3 节点（hvac/people/lights）漏接回跳执行层 `maybe_backhop` ② LLM 异常响应时缺乏重试/兜底 ③ surface 回跳判定过激 ④ simulate 缺前置完整性校验 ⑤ 测试判定不查 zone 数量 |
 
-**一句话**：两个 case 都是 agent graph 的某些阶段（zone / surface）在生产关键对象时"静默失败"（要么 LLM 放弃、要么过早 back-hop），导致最终 IDF 缺失核心几何对象，但流程仍然继续推进到仿真，产生无意义或误导性的结果。
+**一句话**：两个 case 都是 agent graph 的某些阶段（zone / surface）在生产关键对象时"静默失败"（要么 LLM 放弃、要么过早 back-hop），本应由回跳机制修复，但 case_01 因 hvac 漏接 `maybe_backhop` 导致回跳从未发生、case_02 因回跳过激导致 surface 自身没机会创建。最终 IDF 缺失核心几何对象，但流程仍继续推进到仿真，产生无意义或误导性的结果。
 
 ---
 
@@ -135,7 +135,56 @@ run.log 第 5 行: intake_node: empty LLM reply (attempt 1/4), retrying in 2s
 
 同一次测试的 case_02 直接抛了 `openai.BadRequestError: assistant message with 'tool_calls' must be followed by tool messages`（LLM 提供方消息序列错乱）。这强烈提示本次测试期间 **LLM 提供方那侧存在请求序列错乱 / 限流**，zone 分支的并发 LLM 调用很可能也受此影响，返回了无 tool_calls 的异常响应。
 
-### case_01 因果链
+### 证据 7（决定性）：hvac 节点没有调用回跳机制，回跳从未真正发生
+
+> **这一条纠正了报告早期版本里"回跳后 zone 仍没创建"的不准确表述。实际情况是：回跳根本没有发生。**
+
+run.log 第 491 行看起来像是一次成功的回跳：
+```
+2026-07-02 14:58:47.795 | INFO | src.agent.nodes._share:invoke_with_self_repair:301 -
+  [hvac] upstream gap detected (missing Zone 'Office_North') -> hop to zone
+```
+
+但这句日志**极具误导性**。它来自 `invoke_with_self_repair`（`_share.py:301`），该函数检测到 gap 后只是**记日志 + 把 `hop_request` 塞进返回的 result 字典**（`_share.py:300`），**并不发起 `Command(goto=...)`**。真正把 `hop_request` 转成 `Command(goto=<earlier phase>)` 的是另一个函数 `maybe_backhop`（`_share.py:402-449`），它会打印一句不同的日志 `issuing back-hop Command -> ...`（`_share.py:435`）。
+
+case_01 run.log 统计：
+- `upstream gap detected`（invoke_with_self_repair 记录）：**1 次**
+- `issuing back-hop Command`（maybe_backhop 真正发起）：**0 次**
+
+也就是说，hvac 检测到了 `missing Zone 'Office_North'`，但**从未真正回跳到 zone**。
+
+**根因是 hvac 节点（以及 people / lights 节点）缺失了 `maybe_backhop` 调用。** 回跳机制分两层：
+
+| 层 | 函数 | 职责 | 在哪 |
+|---|---|---|---|
+| 检测层 | `invoke_with_self_repair` 内的 `detect_upstream_gap` | 发现缺失的上游对象 → 记日志 + 把 `hop_request` 放进 result 字典 | `_share.py:298-305` |
+| 执行层 | `maybe_backhop` | 读 result 里的 `hop_request` → 发起 `Command(goto=<earlier phase>)` | `_share.py:402-449` |
+
+**只有两层都接上，回跳才会真正发生。** 对照各节点：
+
+| 节点 | 调用 `invoke_with_self_repair`？ | 调用 `maybe_backhop`？ | 回跳能否生效？ |
+|---|---|---|---|
+| construction | ✅ | ✅（`construction.py:110`） | ✅ 能 |
+| surface | ✅ | ✅（`surface.py:106`） | ✅ 能 |
+| fenestration | ✅ | ✅（`fenestration.py:104`） | ✅ 能 |
+| **hvac** | ✅ | ❌ **缺失** | ❌ **不能** |
+| **people** | ✅ | ❌ **缺失** | ❌ **不能** |
+| **lights** | ✅ | ❌ **缺失** | ❌ **不能** |
+
+`surface.py:106-108` 的正确写法（对照参考）：
+```python
+hop = maybe_backhop(result, state, local, "surface")
+if hop is not None:
+    return hop   # ← 真正发起 Command(goto=...)，回跳生效
+```
+
+而 `hvac.py:73` 直接 `return AgentStateUpdate(...)`，**完全没有这两行**，导致 hvac 检测到的 `hop_request` 被无声丢弃。people / lights 同理。
+
+> **注**：construction / surface / fenestration 之所以接了 `maybe_backhop`，是因为它们引用的上游（material / zone / surface / construction）可能缺失；而 hvac / people / lights 引用的上游（zone / schedule）同样可能缺失，却漏接了。这是一个对称性遗漏——很可能是当初实现回跳机制时，只覆盖了 phase-2 的三个节点（construction/surface/fenestration），忘了 phase-3 的 hvac/people/lights。
+
+所以回答标题的问题"为什么 hvac 引用不存在的 zone 时返回到 zone 却没执行 create_zone"——**因为根本没返回到 zone**。回跳机制的设计目的是解决这种情况，但 hvac 节点漏接了执行层（`maybe_backhop`），导致检测层发现的 gap 被丢弃，流程直接往下走到 simulate，带着 0 个 zone 跑了空建筑仿真。
+
+### case_01 因果链（修正版）
 
 ```
 intake 阶段 LLM empty reply 重试（LLM 提供方状态不稳定）
@@ -151,16 +200,23 @@ zone 返回空 config（0 zone），汇合到 cross_ref_foundations
         │
         ▼
 construction / surface / fenestration 全部基于"0 zone"往下走（list_zones 返回空）
+（注：surface 虽然接了 maybe_backhop，但因 surface 自身也没创建任何对象、
+ 且 detect_upstream_gap 在 surface 阶段没触发 gap，所以 surface 没 back-hop）
         │
         ▼
 hvac 创建 IdealLoads 时引用 Office_North（来自 hvac_specs），发现 missing Zone
         │
         ▼ 14:58:47.795
-[hvac] upstream gap detected (missing Zone 'Office_North') -> hop to zone
+invoke_with_self_repair 检测到 gap，记日志 "[hvac] upstream gap ... -> hop to zone"，
+把 hop_request 放进 result 字典
         │
         ▼
-回跳 zone，但 run.log 显示回跳后只见重复 add 上游对象，无 create_zone
-（底层 LLM/API 状态未恢复，zone 依然没创建）
+【BUG】hvac 节点没有调用 maybe_backhop，hop_request 被丢弃，
+返回普通 AgentStateUpdate（无 Command）—— 回跳从未真正发生
+        │
+        ▼
+流程继续：people → lights → cross_ref_complete → validate → simulate
+（run.log 14:58:47.797 之后只见重复 add 上游对象，无 create_zone，因为没回到 zone）
         │
         ▼ 14:58:47.839
 保存最终 IDF（52 对象，0 zone / 0 surface）
@@ -279,7 +335,7 @@ EnergyPlus Fatal（8 Severe，每个 zone 无围护表面），退出码 1
 
 两个 case 表现不同（case_01 缺 zone，case_02 缺 surface），但根因同源，都属于 **agent graph 在阶段失败时的容错/恢复机制不足**：
 
-### 根因 A：并行 fan-out 分支的 LLM 调用缺乏重试/兜底（case_01 主因）
+### 根因 A：并行 fan-out 分支的 LLM 调用缺乏重试/兜底（case_01 上游诱因）
 
 `src/agent/react.py:46-49` 的 `llm_node`：
 ```python
@@ -288,11 +344,34 @@ def llm_node(state):
     return {"messages": [response]}
 ```
 
-LLM 返回无 tool_calls 的异常响应（空内容、纯文本、API 序列错乱）时，`tools_condition` 直接 END，阶段零工具调用静默结束。没有任何机制检测"该阶段是否真的完成了它的任务（创建了一定数量的对象）"。
+LLM 返回无 tool_calls 的异常响应（空内容、纯文本、API 序列错乱）时，`tools_condition` 直接 END，阶段零工具调用静默结束。没有任何机制检测"该阶段是否真的完成了它的任务（创建了一定数量的对象）"。这是 zone 分支产出 0 个 zone、进而触发下游 hvac 发现 `missing Zone` 的源头。
 
-### 根因 B：back-hop 判定过于激进（case_02 主因）
+### 根因 B：surface 阶段 back-hop 判定过于激进（case_02 主因）
 
 `src/agent/nodes/_share.py` 的 `detect_upstream_gap` / `maybe_backhop`：surface 阶段只要发现引用的 zone 名不存在就立即回跳，**不留任何机会让 surface 自己创建表面**。但 surface 的核心职责就是创建表面，它的 zone 引用是通过 surface_specs 间接来的，不应该因为"zone 名暂时不匹配"就放弃整个 surface 阶段。
+
+> 注：case_02 里 surface **正确**调用了 `maybe_backhop`（run.log 有 `issuing back-hop Command -> zone`），回跳机制本身生效了，问题在于"判定阈值过激"。这与 case_01 的根因 F（hvac 漏接 maybe_backhop）是两个不同的缺陷。
+
+### 根因 F（决定性）：hvac / people / lights 节点漏接了回跳执行层 `maybe_backhop`（case_01 回跳失效的真凶）
+
+回跳机制分两层（见 case_01 证据 7 的详述）：
+- **检测层** `invoke_with_self_repair` 内的 `detect_upstream_gap`（`_share.py:298-305`）：发现缺失的上游对象 → 记日志 + 把 `hop_request` 放进 result 字典。
+- **执行层** `maybe_backhop`（`_share.py:402-449`）：读 result 里的 `hop_request` → 发起 `Command(goto=<earlier phase>)`。
+
+**只有两层都接上，回跳才会真正发生。** 但 phase-3 的三个节点（hvac / people / lights）只调用了 `invoke_with_self_repair`（检测层），**全部漏接了 `maybe_backhop`（执行层）**：
+
+| 节点 | 检测层 `invoke_with_self_repair` | 执行层 `maybe_backhop` | 回跳能否生效 |
+|---|---|---|---|
+| construction | ✅ | ✅ `construction.py:110` | ✅ |
+| surface | ✅ | ✅ `surface.py:106` | ✅ |
+| fenestration | ✅ | ✅ `fenestration.py:104` | ✅ |
+| **hvac** | ✅ `hvac.py:58` | ❌ **缺失** | ❌ |
+| **people** | ✅ | ❌ **缺失** | ❌ |
+| **lights** | ✅ | ❌ **缺失** | ❌ |
+
+case_01 里 hvac 检测到了 `missing Zone 'Office_North'`，日志也打印了 `-> hop to zone`，但因为 hvac 节点（`hvac.py:45-78`）直接 `return AgentStateUpdate(...)` 而没有 `maybe_backhop` 那两行，**`hop_request` 被无声丢弃，回跳从未发生**。流程带着 0 个 zone 一路走到 simulate，跑了空建筑仿真。
+
+这是一个**对称性遗漏**：当初实现回跳机制时只覆盖了 phase-2（construction/surface/fenestration），漏掉了结构对称的 phase-3（hvac/people/lights）。phase-3 节点同样会引用可能缺失的上游（zone / schedule），却无法发起回跳去修复。
 
 ### 根因 C：simulate 缺少前置完整性校验（两个 case 共同）
 
@@ -354,29 +433,44 @@ g.add_edge(START, 'a'); g.add_edge(START, 'b'); g.add_edge(START, 'c')
 
 ## 建议修复方向（按优先级，待评审）
 
-### 方向 1（高优先级）：simulate 前置完整性校验
+### 方向 1（最高优先级）：给 hvac / people / lights 接上 `maybe_backhop`（根因 F，case_01 回跳失效的真凶）
+
+这是最小、最直接、最对症的修复。当前 `hvac.py` / `people.py` / `lights.py` 在 `invoke_with_self_repair` 之后直接 `return AgentStateUpdate(...)`，丢弃了 `hop_request`。只需补上和 surface/construction/fenestration 完全一致的两行：
+
+```python
+# hvac.py / people.py / lights.py，在 invoke_with_self_repair 之后、return AgentStateUpdate 之前
+hop = maybe_backhop(result, state, local, "<phase>")
+if hop is not None:
+    return hop
+```
+
+- **收益**：让 hvac/people/lights 检测到缺失的 zone/schedule 时能真正回跳到对应上游阶段重建，而不是带着残缺状态硬走到 simulate。直接修复 case_01 的"回跳从未发生"。
+- **改动位置**：`src/agent/nodes/hvac.py`、`src/agent/nodes/people.py`、`src/agent/nodes/lights.py`，各加 2-3 行 + import `maybe_backhop` + 把返回类型签名改成 `Command[...] | AgentStateUpdate`（参考 `surface.py:71`）。
+- **风险**：极低，纯补齐对称性，与已验证的 surface/construction/fenestration 写法完全一致。需确认这三个节点的 `_Route` Literal 包含其回跳目标（zone / schedule）。
+
+### 方向 2（高优先级）：simulate 前置完整性校验（根因 C）
 在 `WorkflowTool.run_simulation`（`src/mcp/tools/workflow.py:71-104`）跑 EnergyPlus 前，加一道门槛：要求 IDF 至少含 1 个 Zone、且每个 Zone 至少有若干 BuildingSurface。不满足则不仿真，直接返回失败并附带缺什么对象的明确错误，触发正常的回环修复。
-- **收益**：同时拦住 case_01（0 zone）和 case_02（0 surface）的残缺模型假成功；改动小、风险低。
+- **收益**：作为兜底防线，即使回跳机制（方向 1）或 LLM 稳定性（方向 3）失效，残缺模型也不会进 EnergyPlus 产生假阳性；同时拦住 case_02 的"中间状态被仿真"。
 - **改动位置**：`src/mcp/tools/workflow.py` 的 `run_simulation`，复用 `_idf_values` 统计对象数。
 
-### 方向 2（高优先级）：react.py llm_node 鲁棒性增强
+### 方向 3（高优先级）：react.py llm_node 鲁棒性增强（根因 A）
 在 `src/agent/react.py:46-49` 的 `llm_node` 加重试 + 异常处理：
 - LLM 返回无 tool_calls 的空/纯文本响应时，注入一条 HumanMessage（"你必须调用工具完成当前阶段的任务，请重试"）并重新 invoke，最多 N 次。
 - LLM 抛 API 异常（`BadRequestError`/`RateLimitError`/`APITimeoutError`）时按指数退避重试。
-- **收益**：直接命中 case_01 的"zone 静默放弃"；同时提升所有 phase 的 LLM 调用稳定性。
+- **收益**：减少 zone 分支"静默放弃"的源头（根因 A），从源头降低 hvac 发现 missing Zone 的概率。
 - **改动位置**：`src/agent/react.py` 的 `llm_node`。
 
-### 方向 3（中优先级）：back-hop 判定加保护
+### 方向 4（中优先级）：back-hop 判定加保护（根因 B）
 在 `src/agent/nodes/_share.py` 的 `maybe_backhop` / `detect_upstream_gap` 加保护：surface 等阶段在 back-hop 前，若该阶段自身尚未创建任何对象，则**先尝试至少创建一批对象**，而不是立刻回跳。
 - **收益**：命中 case_02 的"surface 过早 back-hop"。
 - **风险**：改动涉及回环核心逻辑，需谨慎，建议配合充分的回环测试。
 
-### 方向 4（中优先级）：intake 输出校验
+### 方向 5（中优先级）：intake 输出校验
 在 `src/agent/nodes/intake.py` 的 structured-output 解析成功后，检查关键字段（`zone_specs`/`material_specs`/`surface_specs` 等）非空且非占位符，否则视为失败重试。
 - **收益**：避免"intake 成功但 specs 残缺"导致下游名字不一致。
 - **改动位置**：`src/agent/nodes/intake.py:204-212`。
 
-### 方向 5（低优先级）：测试判定加固
+### 方向 6（低优先级）：测试判定加固
 在 `run_robustness_test.py` 的 `_check_simulation_output`（513-533 行）或 `simulation_ok`（476-480 行）加门槛：要求 IDF 至少含 1 个 Zone，或 `eplusout.eio` 的 `Zone Summary` 行 Number of Zones > 0，否则判 `simulation_ok=False`。
 - **收益**：让假阳性在测试报告中显式暴露，便于及早发现上游失败。
 
