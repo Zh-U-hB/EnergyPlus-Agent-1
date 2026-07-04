@@ -81,6 +81,7 @@ from loguru import logger
 from src.agent import AgentState, SimContext, build_graph
 from src.agent.runner import run_session
 from src.agent.trace import export_traces, reset_traces
+from src.mcp.state import ConfigState, _idf_values
 from src.results.err_parser import extract_errors
 
 # ---------------------------------------------------------------------------
@@ -151,6 +152,9 @@ class CaseResult:
     err_severe_count: int = 0
     err_warning_count: int = 0
     err_has_error_level: bool = False  # Fatal 或 Severe 之一出现 -> True
+    idf_zone_count: int = 0
+    idf_surface_count: int = 0
+    idf_zones_without_surfaces: list[str] = field(default_factory=list)
     # Per-simulate-round error evolution timeline. One entry per simulate
     # execution (incl. each rollback re-run), each a dict:
     #   {"round": <1-based>, "success": <bool>,
@@ -453,10 +457,11 @@ class CaseHarness:
         no_rollback = self.result.rollback_rounds == 0
         self.result.model_clean_first = first_clean and no_rollback
 
-        # Did simulation actually succeed? Three independent signals:
+        # Did simulation actually succeed? Independent signals:
         #  1) the simulate node message mentions a real idf path,
         #  2) EnergyPlus produced a result artifact under output_dir,
         #  3) eplusout.err has NO Error-level lines (Fatal/Severe).
+        #  4) the IDF has real geometry (zones + surfaces).
         #    Warnings are tolerated.
         msg = (self.result.simulate_message or "")
         has_idf_in_msg = "idf=" in msg.lower() and "error" not in msg.lower()
@@ -473,9 +478,22 @@ class CaseHarness:
             token = msg.split("idf=", 1)[1].strip().split()[0]
             self.result.idf_path = token or None
 
+        geometry_ok = False
+        if self.result.idf_path:
+            geom = _inspect_idf_geometry(Path(self.result.idf_path))
+            self.result.idf_zone_count = geom["zones"]
+            self.result.idf_surface_count = geom["surfaces"]
+            self.result.idf_zones_without_surfaces = geom["zones_without_surfaces"]
+            geometry_ok = (
+                geom["zones"] > 0
+                and geom["surfaces"] > 0
+                and not geom["zones_without_surfaces"]
+            )
+
         self.result.simulation_ok = (
             produced_output
             and has_idf_in_msg
+            and geometry_ok
             and (not self.result.err_has_error_level)
         )
 
@@ -513,24 +531,65 @@ class CaseHarness:
 def _check_simulation_output(output_dir: Path) -> tuple[bool, list[str], Path | None]:
     """Return (ok, output_files, err_path) for a simulation output dir.
 
-    ``ok`` is True if EnergyPlus wrote at least one canonical result
-    artifact (eplusout.end / .sql / eplustbl.csv) — i.e. it actually ran
-    to completion. The list of artifacts and the path to eplusout.err
-    (if present) are returned so the caller can do error-level parsing.
+    ``ok`` is True only if EnergyPlus wrote a completion marker AND at least
+    one time-series result artifact. ``eplustbl.csv`` alone is not enough:
+    an empty 0-zone building can produce table/audit files without any real
+    simulated zone data.
     """
     if not output_dir.exists():
         return False, [], None
     artifacts: list[str] = []
     err_path: Path | None = None
+    has_end = False
+    has_timeseries = False
     for p in output_dir.glob("**/*"):
         if not p.is_file():
             continue
         name = p.name.lower()
-        if name in ("eplusout.end", "eplusout.sql", "eplustbl.csv"):
+        if name in ("eplusout.end", "eplusout.sql", "eplustbl.csv", "eplusout.csv", "eplusout.eso"):
             artifacts.append(str(p))
+        if name == "eplusout.end":
+            has_end = True
+        if name in ("eplusout.csv", "eplusout.eso"):
+            has_timeseries = True
         if name == "eplusout.err":
             err_path = p
-    return bool(artifacts), artifacts, err_path
+    return has_end and has_timeseries, artifacts, err_path
+
+
+def _inspect_idf_geometry(idf_path: Path) -> dict[str, Any]:
+    """Return zone/surface counts for the IDF used by simulate.
+
+    This catches empty-building false positives independently of EnergyPlus'
+    exit status and output-file presence.
+    """
+    result: dict[str, Any] = {
+        "zones": 0,
+        "surfaces": 0,
+        "zones_without_surfaces": [],
+    }
+    if not idf_path.exists():
+        return result
+    try:
+        state = ConfigState()
+        state.load_idf(idf_path)
+        zones = _idf_values(state.idf, "Zone")
+        surfaces = _idf_values(state.idf, "BuildingSurface:Detailed")
+        result["zones"] = len(zones)
+        result["surfaces"] = len(surfaces)
+        surfaces_by_zone: dict[str, int] = {}
+        for surface in surfaces:
+            zone_name = getattr(surface, "zone_name", "")
+            if zone_name:
+                surfaces_by_zone[zone_name] = surfaces_by_zone.get(zone_name, 0) + 1
+        result["zones_without_surfaces"] = [
+            getattr(zone, "name", "")
+            for zone in zones
+            if getattr(zone, "name", "") and surfaces_by_zone.get(getattr(zone, "name", ""), 0) == 0
+        ]
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
 
 
 # ---------------------------------------------------------------------------
