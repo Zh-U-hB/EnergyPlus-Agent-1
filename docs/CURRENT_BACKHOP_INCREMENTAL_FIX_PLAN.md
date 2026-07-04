@@ -114,37 +114,214 @@ Model geometry incomplete: Zone 'Office_North' has 0 BuildingSurface:Detailed ob
 
 **目标**：验证你提出的“zone 节点后置判断 LLM”机制稳定工作。
 
-现有 `zone_validator` 逻辑可以保留，但需要补测试和少量兜底。
+现有 `zone_validator` 逻辑可以保留，但需要补测试、明确失败兜底，并让失败信息进入后续诊断链路。
 
-**建议新增测试**：
+#### P2.1 当前机制边界
 
-1. `zone_specs` 要求 2 个 zone，实际 0 个 zone  
-   预期：validator reject，reason 包含 “0 zones” 或 missing zone。
+现有职责划分是合理的，应保持不变：
 
-2. `zone_specs` 要求 `F1_Office` / `F1_Corridor`，实际只创建 `F1_Office`  
-   预期：validator reject，指出 `F1_Corridor` missing。
+- 主 `zone_agent`：唯一允许创建、更新、删除 Zone 的模块。
+- `zone_validator`：只读取 `local ConfigState` 中实际创建的 Zone，并审计它们是否满足 `zone_specs`。
+- validator 工具只有 `approve` / `reject`，不提供任何 `create_zone` / `update_zone` 能力。
+- validator reject 后，主 `zone_agent` 重新执行，并收到具体 reasons。
 
-3. `zone_specs` 要求 2 个 zone，实际 zone 名完全匹配  
-   预期：validator approve。
+这个设计的关键价值是：**避免主生成 LLM 自证正确**。validator 是独立判断模块，专门捕捉主 ReAct 首轮无 tool_calls、少建 zone、名字不一致、重复 zone 等问题。
 
-4. 主 zone agent 第一次创建不全，validator reject 后主 agent 被再次调用  
-   预期：第二轮能收到具体 feedback。
+#### P2.2 需要补强的失败状态
 
-**测试方式**：
+当前 `zone_agent` 在 validator 多轮 reject 后只打 warning，然后继续 pipeline。这个行为可以保留，因为后续 hvac/surface back-hop 和 P0 simulate 前置校验会继续兜底；但它缺少结构化失败信号。
 
-尽量不要真实调用外部 LLM。用 fake chat model 或 monkeypatch `run_zone_validator()` / `build_react_agent()` 验证控制流：
+建议新增一个明确的失败写入：
 
-- validator reject 时，`zone_agent` 会向主 agent 注入 `HumanMessage`
-- 达到最大轮数后不会死循环
-- `upstream_request` 被消费时仍会清空
+- 当 `MAX_ZONE_VALIDATION_ROUNDS` 耗尽仍未 approved：
+  - 保留当前 `config_state=local`
+  - 继续返回，不阻塞 graph
+  - 但同时写入 `validation_errors`
 
-**兜底建议**：
+错误示例：
 
-如果 `MAX_ZONE_VALIDATION_ROUNDS` 耗尽仍 reject：
+```text
+Zone validation failed after 3 rounds: Specs require zone 'F1_Corridor' but it was not created; duplicate zone name 'Core' appears twice.
+```
 
-- 当前逻辑是 warning 后继续 pipeline
-- 保留这个行为可以，但必须依赖 P0 simulate 前置校验兜底
-- 可以额外写入 `validation_errors`，让后续 validate/日志更容易定位
+这样后续：
+
+- `cross_ref_foundations` / `validate_node` 能看到该失败
+- robustness report 能记录该失败
+- 即使后续 EnergyPlus 没跑，日志也能直接定位到 zone 阶段
+
+注意：如果 `validation_errors` 在后续 `cross_ref_foundations_node` 被完整覆盖，需要考虑把 zone validator failure 也放进 `messages`，或新增独立字段，例如 `phase_errors`。第一版可以先写入 `messages` + `validation_errors`，实现时再确认 reducer 行为。
+
+#### P2.3 validator 自身测试
+
+建议新增测试文件：
+
+- `src/agent/test/test_zone_validator.py`
+
+测试尽量不访问外部 LLM。可以采用 fake LLM 或 monkeypatch `build_react_agent()`，直接返回包含 approve/reject ToolMessage 的结果。
+
+核心测试用例：
+
+1. **0 zone 必须 reject**
+
+   输入：
+
+   - `zone_specs`: “Create two zones: F1_Office and F1_Corridor”
+   - `local`: 无 Zone
+
+   预期：
+
+   - `run_zone_validator()` 返回 `("rejected", reasons)`
+   - reasons 包含 “0 zones” 或至少指出两个 missing zone
+
+2. **缺少指定 zone 必须 reject**
+
+   输入：
+
+   - specs 要求 `F1_Office` / `F1_Corridor`
+   - local 只有 `F1_Office`
+
+   预期：
+
+   - reject
+   - reasons 明确提到 `F1_Corridor`
+
+3. **重复 zone 名必须 reject**
+
+   输入：
+
+   - specs 要求两个不同 zone
+   - local 中出现重复或实际唯一名称不足
+
+   预期：
+
+   - reject
+   - reasons 明确指出 duplicate 或 count mismatch
+
+4. **完全匹配必须 approve**
+
+   输入：
+
+   - specs 要求 `F1_Office` / `F1_Corridor`
+   - local 正好有两个 zone，名称和基本 floor origin 合理
+
+   预期：
+
+   - approve
+   - reasons 为 `None`
+
+5. **validator 未调用 verdict tool 时必须 fail closed**
+
+   输入：
+
+   - fake validator result 中没有 ToolMessage
+
+   预期：
+
+   - `_parse_verdict()` 返回 rejected
+   - reason 为 “Validator did not issue...” 一类错误
+
+#### P2.4 zone_agent 控制流测试
+
+建议新增或扩展：
+
+- `src/agent/test/test_zone_agent_validator_flow.py`
+
+这组测试不需要真实 LLM。建议 monkeypatch：
+
+- `src.agent.nodes.zone.create_llm`
+- `src.agent.nodes.zone.build_react_agent`
+- `src.agent.nodes.zone.run_zone_validator`
+
+核心验证：
+
+1. **validator reject 后主 agent 会重新执行**
+
+   设置：
+
+   - 第一次主 agent 只创建 `F1_Office`
+   - `run_zone_validator` 第一次返回 rejected，reason 指出缺 `F1_Corridor`
+   - 第二次主 agent 根据 feedback 创建 `F1_Corridor`
+   - validator 第二次 approve
+
+   预期：
+
+   - 主 agent invoke 次数为 2
+   - 第二次 invoke 的 messages 中包含 validator reason
+   - 最终 `config_state` 中有两个 zone
+
+2. **达到最大轮数后不会死循环**
+
+   设置：
+
+   - `run_zone_validator` 永远 rejected
+
+   预期：
+
+   - 主 agent 最多被调用 `1 + MAX_ZONE_VALIDATION_ROUNDS` 次
+   - 函数正常返回
+   - 返回 messages 或 validation_errors 中包含最终失败信息
+
+3. **消费 upstream_request 后仍清空**
+
+   设置：
+
+   - `state.upstream_request = {"target": "zone", "specs": "..."}`
+
+   预期：
+
+   - zone specs 中追加 upstream specs
+   - 返回 update 中包含 `upstream_request={}` 清空哨兵
+
+4. **validator approve 时不额外重跑**
+
+   设置：
+
+   - 第一次 validator approve
+
+   预期：
+
+   - 主 agent invoke 次数为 1
+   - 不注入额外 feedback
+
+#### P2.5 fake agent 设计建议
+
+为了避免真实 LLM，测试里可以提供一个极小 fake compiled graph：
+
+```python
+class FakeZoneReactAgent:
+    def __init__(self, local, rounds):
+        self.local = local
+        self.rounds = rounds
+        self.calls = []
+
+    def invoke(self, react_state):
+        self.calls.append(react_state)
+        # 按测试 round 往 local.idf 里添加 Zone
+        ...
+        return {"messages": [AIMessage(content="done")]}
+```
+
+也可以直接 monkeypatch `invoke_with_self_repair()`，让它返回预设 messages 并直接修改 `local`。这样测试重点会更集中在 zone validator loop，而不是 ReAct 细节。
+
+#### P2.6 验收标准
+
+实现完成后应满足：
+
+- zone validator 的 approve/reject 解析有单元测试覆盖
+- 0 zone、少 zone、名字不匹配不会静默通过
+- validator reject 会反馈到主 zone agent，并触发重跑
+- validator 长期 reject 不会无限循环
+- validator 最终失败会留下结构化诊断信息
+- 不真实调用外部 LLM 的测试能稳定运行
+
+#### P2.7 暂不扩展到其它 phase
+
+本轮只补强 zone validator。不要马上给 material/schedule/surface 等阶段复制一套 validator，原因：
+
+- zone 是所有 geometry/HVAC/load 的根依赖，优先级最高。
+- 其它 phase 更适合先由 P0 完整性校验、P3 延迟回跳、P5 ReAct 首轮重试兜底。
+- 如果后续还出现 surface/fenestration 静默完成，再考虑建立对应 phase validator。
 
 ---
 
