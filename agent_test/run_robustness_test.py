@@ -168,6 +168,15 @@ class CaseResult:
     elapsed_s: float = 0.0
     error: str | None = None
     simulate_message: str | None = None
+    # Did the zone completeness validator exhaust its retry budget without
+    # approving? zone.py writes a "[zone-validator] ..." AIMessage when the
+    # main zone agent could not satisfy the specs within
+    # MAX_ZONE_VALIDATION_ROUNDS. The structured validation_errors channel
+    # is NOT reliable here: cross_ref_foundations_node overwrites it on the
+    # very next graph step (last-write-wins reducer), so the report must
+    # recover this signal by scanning the message stream instead.
+    zone_validator_failed: bool = False
+    zone_validator_reasons: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +395,23 @@ class CaseHarness:
         # top — count it as a rebuild.
         if node in ("intake", "revise"):
             self.result.rebuild_count += 1
+        # Capture the zone-validator failure signal. zone.py emits a
+        # "[zone-validator] ..." AIMessage ONLY when the validator exhausted
+        # its retry budget. The structured validation_errors field is
+        # overwritten by cross_ref_foundations_node on the next step
+        # (last-write-wins reducer), so the message stream is the only
+        # durable carrier — scan it here. Multiple messages can accumulate
+        # across intake/revision re-runs; keep the latest non-empty reasons.
+        if node == "zone":
+            for m in (update.get("messages") or []):
+                content = getattr(m, "content", "") or ""
+                if isinstance(content, str) and content.startswith("[zone-validator]"):
+                    self.result.zone_validator_failed = True
+                    reasons_text = content[len("[zone-validator]"):].strip()
+                    if reasons_text:
+                        self.result.zone_validator_reasons = [
+                            s.strip() for s in reasons_text.split(";") if s.strip()
+                        ]
         # Capture the simulate node's summary message (has idf path / status).
         if node == "simulate":
             self.result.reached_simulate = True
@@ -771,6 +797,12 @@ def write_reports(
         "total_err_fatal": sum(r.err_fatal_count for r in results),
         "total_err_severe": sum(r.err_severe_count for r in results),
         "total_err_warning": sum(r.err_warning_count for r in results),
+        # zone-validator exhaustion count. Recovered from the [zone-validator]
+        # message prefix (validation_errors is overwritten by cross_ref on the
+        # next step). A non-zero value means the zone phase could not satisfy
+        # its specs within MAX_ZONE_VALIDATION_ROUNDS — often the root cause of
+        # a downstream 0-zone / 0-surface false success.
+        "zone_validator_failed": sum(r.zone_validator_failed for r in results),
     }
 
     # Average per-phase wall-clock across all runs (find the slow phase).
@@ -823,6 +855,10 @@ def write_reports(
         f"- 失败 (failed): {summary['failed']}  |  崩溃 (crashed): "
         f"{summary['crashed']}  |  err 含 Error 级: "
         f"{summary['err_with_error_level']}",
+        f"- zone-validator 耗尽 (zone_validator_failed): "
+        f"{summary['zone_validator_failed']}  "
+        f"_(zone 阶段未能满足 specs，validation_errors 被 cross_ref 覆盖，"
+        f"故从 [zone-validator] message 恢复)_",
         f"- 平均: 回滚 {summary['avg_rollback_rounds']} 轮  |  "
         f"重建 {summary['avg_rebuild_count']} 次  |  "
         f"validate 命中 {summary['avg_validate_hits']} 次  |  "
@@ -838,8 +874,8 @@ def write_reports(
         "",
         "## Per-run detail",
         "",
-        "| Case | rep | first_pass | model_clean | recovered | sim_ok | rollback | rebuild | validate× | err@1st | F/S/W | time(s) | slowest phase |",
-        "|------|-----|-----------|-------------|-----------|---------|----------|---------|-----------|---------|-------|---------|---------------|",
+        "| Case | rep | first_pass | model_clean | recovered | sim_ok | rollback | rebuild | validate× | err@1st | F/S/W | zfail | time(s) | slowest phase |",
+        "|------|-----|-----------|-------------|-----------|---------|----------|---------|-----------|---------|-------|-------|---------|---------------|",
     ]
     for r in results:
         # slowest phase for this run (name + seconds)
@@ -850,6 +886,10 @@ def write_reports(
             slowest = f"{slowest_phase} {slowest_s}s"
         else:
             slowest = "-"
+        # zone-validator exhaustion flag (✅ = validator exhausted without
+        # approving — a strong modeling-quality red flag). Empty when the
+        # validator approved or never reached exhaustion.
+        zfail = "⚠️" if r.zone_validator_failed else ""
         lines.append(
             f"| {r.case_id} | {r.repeat_index} "
             f"| {'✅' if r.first_pass else '❌'} "
@@ -859,6 +899,7 @@ def write_reports(
             f"| {r.rollback_rounds} | {r.rebuild_count} | {r.validate_hits} "
             f"| {r.first_validate_errors} "
             f"| {r.err_fatal_count}/{r.err_severe_count}/{r.err_warning_count} "
+            f"| {zfail} "
             f"| {r.elapsed_s} | {slowest} |"
         )
     if repeat > 1:
