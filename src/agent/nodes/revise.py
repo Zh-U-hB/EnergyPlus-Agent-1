@@ -16,6 +16,7 @@ Key differences from intake:
 
 from __future__ import annotations
 
+import time
 from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -23,6 +24,7 @@ from loguru import logger
 
 from src.agent._share import language_directive
 from src.agent.llm import create_llm
+from src.agent.nodes.intake import INTAKE_MAX_EMPTY_RETRIES
 from src.agent.state import AgentState, AgentStateUpdate, IntakeOutput
 
 
@@ -59,6 +61,17 @@ Rules:
    (they are passed through as-is).
 7. Internal consistency still applies — any new name you introduce must be
    reused verbatim across subsystems.
+8. If a "## EnergyPlus simulation errors to fix" section is present, the
+   previous simulation FAILED — your PRIMARY job is to fix those errors,
+   not to honor stylistic edits. Common geometry fixes:
+   - "Outward facing angle of subsurface differs >90 degrees from base
+     surface" => the fenestration vertices are wound opposite to their host
+     wall. Fix by reversing the vertex order (or correcting the window's
+     construction/placement) in fenestration_specs.
+   - "X not found" / "does not exist" => a referenced object name is wrong
+     or missing; create or rename it in the owning *_specs.
+   Give a CONCRETE, named fix in the relevant *_specs; leave unrelated
+   subsystems as "no changes needed".
 """
 
 
@@ -136,36 +149,59 @@ def revise_node(state: AgentState) -> AgentStateUpdate:
     )
 
     inventory = _summarize_config_for_llm(state)
-    text = (
-        f"{inventory}\n\n"
-        f"## User's modification request:\n{state.user_input}"
-    )
 
-    result = cast(
-        dict[str, Any],
-        llm.invoke(
-            [
-                SystemMessage(content=REVISE_SYSTEM_PROMPT + language_directive()),
-                HumanMessage(content=text),
-            ]
-        ),
-    )
+    # If we got here via a simulate failure (not a user edit request),
+    # surface the EnergyPlus errors so the LLM writes fix instructions.
+    sim_errors = state.simulation_errors
+    sections = [inventory]
+    if sim_errors:
+        err_text = "\n".join(f"  - {e}" for e in sim_errors)
+        sections.append(
+            "## EnergyPlus simulation errors to fix:\n"
+            "The previous simulation FAILED with these errors. Write concrete "
+            "fix instructions into the relevant *_specs (e.g. fix surface "
+            "vertex winding / window orientation / missing objects):\n"
+            f"{err_text}"
+        )
+    sections.append(f"## User's modification request:\n{state.user_input}")
+    text = "\n\n".join(sections)
 
-    parsed: IntakeOutput | None = result.get("parsed")
-    if parsed is None:
+    messages = [
+        SystemMessage(content=REVISE_SYSTEM_PROMPT + language_directive()),
+        HumanMessage(content=text),
+    ]
+
+    # Retry on empty LLM replies (same gateway transient as intake_node).
+    result: dict[str, Any] = {}
+    parsed: IntakeOutput | None = None
+    for attempt in range(INTAKE_MAX_EMPTY_RETRIES + 1):
+        result = cast(dict[str, Any], llm.invoke(messages))
+        parsed = result.get("parsed")
+        if parsed is not None:
+            break
         raw = result.get("raw")
         parsing_error = result.get("parsing_error")
         raw_preview = repr(raw.content if raw is not None else raw)[:500]
-        logger.error(
-            "revise_node: structured output parse failed. "
-            "parsing_error={} raw preview={}",
-            parsing_error,
-            raw_preview,
+        is_empty = parsing_error is None and raw_preview in ("''", "None")
+        if not is_empty or attempt == INTAKE_MAX_EMPTY_RETRIES:
+            logger.error(
+                "revise_node: structured output parse failed. "
+                "parsing_error={} raw preview={}",
+                parsing_error,
+                raw_preview,
+            )
+            raise RuntimeError(
+                "IntakeOutput parsing returned None in revise_node. "
+                f"parsing_error={parsing_error!r}; raw preview: {raw_preview}"
+            )
+        sleep_s = 2 ** (attempt + 1)
+        logger.warning(
+            "revise_node: empty LLM reply (attempt {}/{}), retrying in {}s",
+            attempt + 1,
+            INTAKE_MAX_EMPTY_RETRIES + 1,
+            sleep_s,
         )
-        raise RuntimeError(
-            "IntakeOutput parsing returned None in revise_node. "
-            f"parsing_error={parsing_error!r}; raw preview: {raw_preview}"
-        )
+        time.sleep(sleep_s)
 
     # Preserve building/site_location from the existing model (the LLM may
     # echo them, but we force the authoritative values to avoid drift).
@@ -174,9 +210,16 @@ def revise_node(state: AgentState) -> AgentStateUpdate:
     config.building = building
     config.site_location = site_location
 
+    # Preserve incoming validation_errors: when simulate rolled back here
+    # due to an EnergyPlus failure, it pushed the error text into
+    # validation_errors so downstream phase agents (surface/fenestration/...)
+    # see the fix instructions via invoke_with_self_repair. Clearing them
+    # here would drop that signal. We DO clear simulation_errors (consumed
+    # above) to avoid re-injecting on the next revise pass.
     return AgentStateUpdate(
         intake_output=parsed,
         config_state=config,
-        validation_errors=[],
+        validation_errors=list(state.validation_errors),
+        simulation_errors=[],
         is_revision=True,
     )
