@@ -1,5 +1,5 @@
 from idfpy import IDF
-from idfpy.models.simulation import Building
+from idfpy.models import Building
 
 from src.converters.base_converter import BaseConverter
 from src.utils.logging import get_logger

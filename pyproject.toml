@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.3",
-    "idfpy>=26.1.0",
+    "idfpy==26.1.*",
     "fastmcp>=2.14.1",
     "google-genai>=1.68.0",
     "langchain>=1.2.13",
@@ -78,6 +78,11 @@ docstring-code-format = true
 dev = [
     "grandalf>=0.8",
     "langsmith>=0.7.23",
+    "pre-commit>=4.6.0",
     "pytest>=9.0.2",
     "ruff>=0.15.20",
+    "ty>=0.0.56",
 ]
+
+[tool.ty.src]
+exclude = ["tests"]

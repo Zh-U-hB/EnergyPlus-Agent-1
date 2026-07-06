@@ -1,5 +1,5 @@
 from idfpy import IDF
-from idfpy.models.thermal_zones import FenestrationSurfaceDetailed
+from idfpy.models import FenestrationSurfaceDetailed
 
 from src.converters.base_converter import BaseConverter
 from src.validator.data_model import (

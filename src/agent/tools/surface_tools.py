@@ -1,8 +1,12 @@
 import json
+from typing import Literal
 
-from idfpy.models.thermal_zones import (
+from idfpy.models import (
     BuildingSurfaceDetailed,
     BuildingSurfaceDetailedVerticesItem,
+    Construction,
+    FenestrationSurfaceDetailed,
+    Zone,
 )
 from langchain_core.tools import BaseTool, tool
 
@@ -23,13 +27,15 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def create_surface(
         name: str,
-        surface_type: str,
+        surface_type: Literal["Ceiling", "Floor", "Roof", "Wall"],
         construction_name: str,
         zone_name: str,
-        outside_boundary_condition: str,
+        outside_boundary_condition: Literal[
+            "Outdoors", "Ground", "Zone", "Adiabatic", "Surface"
+        ],
         vertices: list[dict[str, float]],
-        sun_exposure: str = "NoSun",
-        wind_exposure: str = "NoWind",
+        sun_exposure: Literal["NoSun", "SunExposed"] = "NoSun",
+        wind_exposure: Literal["NoWind", "WindExposed"] = "NoWind",
         outside_boundary_condition_object: str | None = None,
     ) -> str:
         """Create a BuildingSurface:Detailed (wall/floor/roof/ceiling).
@@ -53,7 +59,9 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
             outside_boundary_condition_object: Matching surface name when
                                                outside_boundary_condition in {Surface, Zone}.
         """
-        if idf.has("BuildingSurface:Detailed", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(BuildingSurfaceDetailed, name):
             return _err(f"Surface '{name}' already exists.")
         if not idf.has("Construction", construction_name):
             return _err(
@@ -87,9 +95,12 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
                     vertices=vertex_items,
                 )
             )
+            data = idf.get(BuildingSurfaceDetailed, name)
+            if data is None:
+                raise ValueError("BuildingSurface:Detailed not found")
             return _ok(
                 f"Surface '{name}' created successfully.",
-                idf.get("BuildingSurface:Detailed", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating surface '{name}': {e}")
@@ -97,6 +108,8 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_surfaces() -> str:
         """List all building surfaces."""
+        if idf is None:
+            raise ValueError("IDF is None")
         items = [
             s.model_dump() for s in idf.all_of_type("BuildingSurface:Detailed").values()
         ]
@@ -105,7 +118,9 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def get_surface(name: str) -> str:
         """Read a surface by name."""
-        obj = idf.get("BuildingSurface:Detailed", name)
+        if idf is None:
+            raise ValueError("IDF is None")
+        obj = idf.get(BuildingSurfaceDetailed, name)
         if obj is None:
             return _err(f"Surface '{name}' not found.")
         return _ok(f"Surface '{name}' read successfully.", obj.model_dump())
@@ -115,10 +130,13 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
         name: str,
         construction_name: str | None = None,
         zone_name: str | None = None,
-        outside_boundary_condition: str | None = None,
+        outside_boundary_condition: Literal[
+            "Outdoors", "Ground", "Zone", "Adiabatic", "Surface"
+        ]
+        | None = None,
         outside_boundary_condition_object: str | None = None,
-        sun_exposure: str | None = None,
-        wind_exposure: str | None = None,
+        sun_exposure: Literal["NoSun", "SunExposed"] | None = None,
+        wind_exposure: Literal["NoWind", "WindExposed"] | None = None,
         vertices: list[dict[str, float]] | None = None,
     ) -> str:
         """Update fields of an existing surface by name.
@@ -135,11 +153,13 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
             sun_exposure / wind_exposure: SunExposed / NoSun, WindExposed / NoWind.
             vertices: New full vertex list ({"X","Y","Z"} dicts), >= 3 points.
         """
-        obj = idf.get("BuildingSurface:Detailed", name)
+        if idf is None:
+            raise ValueError("IDF is None")
+        obj = idf.get(BuildingSurfaceDetailed, name)
         if obj is None:
             return _err(f"Surface '{name}' not found.")
         if construction_name is not None and not idf.has(
-            "Construction", construction_name
+            Construction, construction_name
         ):
             return _err(
                 f"Construction '{construction_name}' not found.",
@@ -183,10 +203,12 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def delete_surface(name: str) -> str:
         """Delete a surface. Fails if fenestration references it."""
-        if not idf.has("BuildingSurface:Detailed", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if not idf.has(BuildingSurfaceDetailed, name):
             return _err(f"Surface '{name}' not found.")
         refs = []
-        for f in idf.all_of_type("FenestrationSurface:Detailed").values():
+        for f in idf.all_of_type(FenestrationSurfaceDetailed).values():
             if f.building_surface_name == name:
                 refs.append(f"Fenestration:{f.name}")
         if refs:
@@ -200,13 +222,17 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_zones() -> str:
         """Read-only: list zones a surface can be assigned to."""
-        items = [z.model_dump() for z in idf.all_of_type("Zone").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [z.model_dump() for z in idf.all_of_type(Zone).values()]
         return _ok(f"Listed {len(items)} zones.", items)
 
     @tool
     def list_constructions() -> str:
         """Read-only: list constructions a surface can reference."""
-        items = [c.model_dump() for c in idf.all_of_type("Construction").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [c.model_dump() for c in idf.all_of_type(Construction).values()]
         return _ok(f"Listed {len(items)} constructions.", items)
 
     return [

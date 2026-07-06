@@ -1,6 +1,7 @@
 import json
+from typing import Literal
 
-from idfpy.models.outputs import OutputVariable
+from idfpy.models import OutputVariable
 from langchain_core.tools import BaseTool, tool
 
 from src.mcp.state import ConfigState
@@ -21,7 +22,9 @@ def make_output_tools(config: ConfigState) -> list[BaseTool]:
     def add_output_variable(
         variable_name: str,
         key_value: str = "*",
-        reporting_frequency: str = "Hourly",
+        reporting_frequency: Literal[
+            "Detailed", "Timestep", "Hourly", "Daily", "Monthly", "RunPeriod"
+        ] = "Hourly",
     ) -> str:
         """Add an Output:Variable request.
 
@@ -34,7 +37,9 @@ def make_output_tools(config: ConfigState) -> list[BaseTool]:
             # Dedup by (key_value, variable_name, reporting_frequency) so
             # multi-turn revisions / repeated default additions don't bloat the
             # IDF and result columns. Mirrors ConfigState._add_outputs' contract.
-            for existing in idf.all_of_type("Output:Variable").values():
+            if idf is None:
+                raise ValueError("IDF is None")
+            for existing in idf.all_of_type(OutputVariable).values():
                 if (
                     getattr(existing, "key_value", None) == key_value
                     and getattr(existing, "variable_name", None) == variable_name
@@ -59,7 +64,9 @@ def make_output_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_output_variables() -> str:
         """List all registered Output:Variable entries."""
-        items = [ov.model_dump() for ov in idf.all_of_type("Output:Variable").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [ov.model_dump() for ov in idf.all_of_type(OutputVariable).values()]
         return _ok(f"Listed {len(items)} Output:Variable entries.", items)
 
     return [add_output_variable, list_output_variables]

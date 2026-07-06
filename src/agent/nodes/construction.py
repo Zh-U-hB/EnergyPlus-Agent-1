@@ -130,6 +130,6 @@ def construction_agent(
     summary = final[-1].content if final else "construction done"
     return AgentStateUpdate(
         config_state=local,
-        upstream_request=None,  # consume the back-hop request
+        upstream_request={},  # consume the back-hop request
         messages=[AIMessage(content=f"[construction] {summary}")],
     )

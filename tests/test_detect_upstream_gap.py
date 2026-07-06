@@ -7,10 +7,11 @@ reported on an earlier round keeps triggering a back-hop even after the
 LLM successfully healed the reference.
 """
 
-from idfpy.models.constructions import Construction, Material
-from idfpy.models.thermal_zones import (
+from idfpy.models import (
     BuildingSurfaceDetailed,
     BuildingSurfaceDetailedVerticesItem,
+    Construction,
+    Material,
     Zone,
 )
 

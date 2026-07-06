@@ -270,8 +270,8 @@ def scenario_b(graph) -> ScenarioResult:
 
         _run_turn(graph, B_TURN3, f"{name}_t3", out, seed_idf=idf2)
         idf3 = _wait_for_idf(out)
-        if not idf3:
-            return _fail(name, t0, "turn 3 produced no IDF")
+        if not idf3 or idf3 == idf2:
+            return _fail(name, t0, "turn 3 produced no new IDF")
         inv3 = _inventory(idf3)
         checks = []
         if inv3["zone"] != 3:
@@ -392,7 +392,7 @@ def scenario_d(graph) -> ScenarioResult:
             graph, D_TURN2_BAD, f"{name}_t2", out, seed_idf=idf1, approve_always=True
         )
         idf2 = _wait_for_idf(out)
-        if idf2:
+        if idf2 and idf2 != idf1:
             inv2 = _inventory(idf2)
             errs = _validate_refs(idf2)
             if inv2["zone"] < inv1["zone"]:
@@ -485,8 +485,8 @@ def scenario_f(graph) -> ScenarioResult:
 
         _run_turn(graph, F_TURN2, f"{name}_t2", out, seed_idf=idf1)
         idf2 = _wait_for_idf(out)
-        if not idf2:
-            return _fail(name, t0, "turn 2 no IDF")
+        if not idf2 or idf2 == idf1:
+            return _fail(name, t0, "turn 2 produced no new IDF")
         zones_t2 = set(_names(idf2, "Zone"))
         if zones_t1 != zones_t2:
             return _fail(
@@ -495,8 +495,8 @@ def scenario_f(graph) -> ScenarioResult:
 
         _run_turn(graph, F_TURN3, f"{name}_t3", out, seed_idf=idf2)
         idf3 = _wait_for_idf(out)
-        if not idf3:
-            return _fail(name, t0, "turn 3 no IDF")
+        if not idf3 or idf3 == idf2:
+            return _fail(name, t0, "turn 3 produced no new IDF")
         zones_t3 = set(_names(idf3, "Zone"))
         if zones_t1 != zones_t3:
             return _fail(

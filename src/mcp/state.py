@@ -1,26 +1,25 @@
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, SupportsIndex
 
 import yaml
 from idfpy import IDF
-from idfpy.models.constructions import (
+from idfpy.models import (
+    Building,
+    BuildingSurfaceDetailed,
+    BuildingSurfaceDetailedVerticesItem,
     Construction,
+    FenestrationSurfaceDetailed,
+    GlobalGeometryRules,
+    HVACTemplateThermostat,
+    HVACTemplateZoneIdealLoadsAirSystem,
+    Lights,
     Material,
     MaterialAirGap,
     MaterialNoMass,
-    WindowMaterialGlazing,
-    WindowMaterialSimpleGlazingSystem,
-)
-from idfpy.models.hvac_templates import (
-    HVACTemplateThermostat,
-    HVACTemplateZoneIdealLoadsAirSystem,
-)
-from idfpy.models.internal_gains import Lights, People
-from idfpy.models.location import RunPeriod, SiteLocation
-from idfpy.models.outputs import (
     OutputControlTableStyle,
     OutputDiagnostics,
     OutputDiagnosticsDiagnosticsItem,
@@ -28,18 +27,17 @@ from idfpy.models.outputs import (
     OutputTableSummaryReportsReportsItem,
     OutputVariable,
     OutputVariableDictionary,
-)
-from idfpy.models.schedules import (
+    People,
+    RunPeriod,
     ScheduleCompact,
     ScheduleCompactDataItem,
     ScheduleTypeLimits,
-)
-from idfpy.models.simulation import Building, SimulationControl, Timestep, Version
-from idfpy.models.thermal_zones import (
-    BuildingSurfaceDetailed,
-    BuildingSurfaceDetailedVerticesItem,
-    FenestrationSurfaceDetailed,
-    GlobalGeometryRules,
+    SimulationControl,
+    SiteLocation,
+    Timestep,
+    Version,
+    WindowMaterialGlazing,
+    WindowMaterialSimpleGlazingSystem,
     Zone,
 )
 from loguru import logger
@@ -342,20 +340,26 @@ class ConfigState(BaseSchema):
             return False
         import tempfile
 
+        tmp_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".idf", delete=False
             ) as tf:
                 tf.write(self.seed_idf_text)
-                loaded = IDF.load(Path(tf.name))
-                Path(tf.name).unlink()
-                new_idf = IDF.from_dict(loaded.to_dict())
+                tf.flush()
+                tmp_path = Path(tf.name)
+            loaded = IDF.load(tmp_path)
+            new_idf = IDF.from_dict(loaded.to_dict())
             self._set_idf_private(new_idf)
             return True
         except Exception:
             return False
+        finally:
+            if tmp_path is not None:
+                with contextlib.suppress(Exception):
+                    tmp_path.unlink()
 
-    def __reduce_ex__(self, protocol: int = 2):
+    def __reduce_ex__(self, protocol: SupportsIndex):
         """Pickle protocol: serialize IDF as text to avoid weakref.
 
         idfpy's IDF holds weakref internals that break pickle. We intercept
@@ -400,7 +404,9 @@ class ConfigState(BaseSchema):
     @property
     def idf(self) -> IDF:
         if self._idf is None:
-            self._set_idf_private(IDF())
+            idf = IDF()
+            self._set_idf_private(idf)
+            return idf
         return self._idf
 
     def new_idf(self) -> None:
@@ -1630,11 +1636,20 @@ def _reconstruct_config_state(idf_text: str, fields: dict) -> ConfigState:
     if idf_text:
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".idf", delete=False) as tf:
-            tf.write(idf_text)
-            loaded = IDF.load(Path(tf.name))
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".idf", delete=False
+            ) as tf:
+                tf.write(idf_text)
+                tf.flush()
+                tmp_path = Path(tf.name)
+            loaded = IDF.load(tmp_path)
             cs._set_idf_private(IDF.from_dict(loaded.to_dict()))
-            os.unlink(tf.name)
+        finally:
+            if tmp_path is not None:
+                with contextlib.suppress(Exception):
+                    tmp_path.unlink()
     else:
         cs._set_idf_private(IDF())
     return cs

@@ -1,6 +1,8 @@
 import json
+from typing import Literal
 
-from idfpy.models.constructions import (
+from idfpy.models import (
+    Construction,
     Material,
     MaterialAirGap,
     MaterialNoMass,
@@ -44,7 +46,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     @tool
     def create_standard_material(
         name: str,
-        roughness: str,
+        roughness: Literal[
+            "VeryRough", "Rough", "MediumRough", "MediumSmooth", "Smooth", "VerySmooth"
+        ],
         thickness: float,
         conductivity: float,
         density: float,
@@ -60,6 +64,8 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             density: kg/m^3, > 0.
             specific_heat: J/(kg*K), > 0.
         """
+        if idf is None:
+            raise ValueError("IDF is None")
         if idf.has("Material", name):
             return _err(f"Material '{name}' already exists.")
         try:
@@ -73,9 +79,12 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                     specific_heat=specific_heat,
                 )
             )
+            data = idf.get(Material, name)
+            if data is None:
+                raise ValueError("Material not found")
             return _ok(
                 f"Material '{name}' created successfully.",
-                idf.get("Material", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating material '{name}': {e}")
@@ -83,7 +92,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     @tool
     def create_nomass_material(
         name: str,
-        roughness: str,
+        roughness: Literal[
+            "VeryRough", "Rough", "MediumRough", "MediumSmooth", "Smooth", "VerySmooth"
+        ],
         thermal_resistance: float,
     ) -> str:
         """Create a NoMass material (R-value only).
@@ -93,7 +104,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             roughness: Same options as create_standard_material.
             thermal_resistance: R-value, m^2*K/W, > 0.
         """
-        if idf.has("Material:NoMass", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(MaterialNoMass, name):
             return _err(f"Material:NoMass '{name}' already exists.")
         try:
             idf.add(
@@ -103,9 +116,12 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                     thermal_resistance=thermal_resistance,
                 )
             )
+            data = idf.get(MaterialNoMass, name)
+            if data is None:
+                raise ValueError("Material:NoMass not found")
             return _ok(
                 f"Material:NoMass '{name}' created successfully.",
-                idf.get("Material:NoMass", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating NoMass material '{name}': {e}")
@@ -113,13 +129,18 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     @tool
     def create_airgap_material(name: str, thermal_resistance: float) -> str:
         """Create an AirGap material (air cavity resistance)."""
-        if idf.has("Material:AirGap", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(MaterialAirGap, name):
             return _err(f"Material:AirGap '{name}' already exists.")
         try:
             idf.add(MaterialAirGap(name=name, thermal_resistance=thermal_resistance))
+            data = idf.get(MaterialAirGap, name)
+            if data is None:
+                raise ValueError("Material:AirGap not found")
             return _ok(
                 f"Material:AirGap '{name}' created successfully.",
-                idf.get("Material:AirGap", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating AirGap material '{name}': {e}")
@@ -149,7 +170,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             solar_heat_gain_coefficient: SHGC, 0-1.
             visible_transmittance: Optional VT, 0-1.
         """
-        if idf.has("WindowMaterial:SimpleGlazingSystem", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(WindowMaterialSimpleGlazingSystem, name):
             return _err(f"WindowMaterial:SimpleGlazingSystem '{name}' already exists.")
         try:
             idf.add(
@@ -160,9 +183,12 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                     visible_transmittance=visible_transmittance,
                 )
             )
+            data = idf.get(WindowMaterialSimpleGlazingSystem, name)
+            if data is None:
+                raise ValueError("WindowMaterial:SimpleGlazingSystem not found")
             return _ok(
                 f"WindowMaterial:SimpleGlazingSystem '{name}' created successfully.",
-                idf.get("WindowMaterial:SimpleGlazingSystem", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating glazing material '{name}': {e}")
@@ -215,7 +241,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             dirt_correction_factor: 0.5-1.0 (1.0 = clean).
             solar_diffusing: "Yes" or "No".
         """
-        if idf.has("WindowMaterial:Glazing", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(WindowMaterialGlazing, name):
             return _err(f"WindowMaterial:Glazing '{name}' already exists.")
         # Hard guard: per-pane WindowMaterial:Glazing with LLM-generated
         # optical parameters frequently makes EnergyPlus's
@@ -235,7 +263,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             "SHGC~0.78; double pane U~1.8-2.8 SHGC~0.4-0.6; triple pane "
             "U~0.8-1.4 SHGC~0.3-0.5. Then make the window construction use "
             "this SimpleGlazingSystem as its SOLE layer.",
-            data={"hint": "use create_glazing_material instead"},
+            data={
+                "hint": "use create_glazing_material instead"
+            },  # FIXME: data is not used
         )
         try:  # pragma: no cover - unreachable while the guard above is active
             idf.add(
@@ -257,6 +287,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                     solar_diffusing=solar_diffusing,
                 )
             )
+            data = idf.get(WindowMaterialGlazing, name)
+            if data is None:
+                raise ValueError("WindowMaterial:Glazing not found")
             return _ok(
                 f"WindowMaterial:Glazing '{name}' created successfully.",
                 idf.get("WindowMaterial:Glazing", name).model_dump(),
@@ -267,6 +300,8 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     @tool
     def list_materials() -> str:
         """List all materials."""
+        if idf is None:
+            raise ValueError("IDF is None")
         items = []
         for t in _ALL_MATERIAL_TYPES:
             for obj in idf.all_of_type(t).values():
@@ -365,7 +400,9 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             "layer_9",
             "layer_10",
         ]
-        for c in idf.all_of_type("Construction").values():
+        if idf is None:
+            raise ValueError("IDF is None")
+        for c in idf.all_of_type(Construction).values():
             for lf in layer_fields:
                 if getattr(c, lf, None) == name:
                     refs.append(f"Construction:{c.name}")

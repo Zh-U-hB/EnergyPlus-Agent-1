@@ -128,9 +128,10 @@ def zone_agent(state: AgentState) -> AgentStateUpdate:
     )
     if final_validation_errors:
         update["validation_errors"] = final_validation_errors
-        update["messages"].append(
-            AIMessage(content="[zone-validator] " + " ".join(final_validation_errors))
-        )
+        update["messages"] = [
+            *update["messages"],
+            AIMessage(content="[zone-validator] " + " ".join(final_validation_errors)),
+        ]
     # Drop the consumed back-hop request so it can't be re-injected on retry.
     # An empty dict is the reducer's explicit-clear sentinel (a bare None would
     # be treated as "field omitted" by sibling branches and leave the value).

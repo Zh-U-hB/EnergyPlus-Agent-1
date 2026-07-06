@@ -1,7 +1,11 @@
 import json
-from typing import Any
+from typing import Any, Literal
 
-from idfpy.models.schedules import (
+from idfpy.models import (
+    HVACTemplateThermostat,
+    HVACTemplateZoneIdealLoadsAirSystem,
+    Lights,
+    People,
     ScheduleCompact,
     ScheduleCompactDataItem,
     ScheduleTypeLimits,
@@ -28,8 +32,25 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         name: str,
         lower_limit_value: float | None = None,
         upper_limit_value: float | None = None,
-        numeric_type: str = "CONTINUOUS",
-        unit_type: str = "Dimensionless",
+        numeric_type: Literal["Continuous", "Discrete"] = "Continuous",
+        unit_type: Literal[
+            "",
+            "ActivityLevel",
+            "Angle",
+            "Availability",
+            "Capacity",
+            "Control",
+            "ConvectionCoefficient",
+            "DeltaTemperature",
+            "Dimensionless",
+            "Mode",
+            "Percent",
+            "Power",
+            "PrecipitationRate",
+            "Temperature",
+            "Velocity",
+        ]
+        | None = "Dimensionless",
     ) -> str:
         """Create a ScheduleTypeLimits.
 
@@ -40,7 +61,9 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             numeric_type: CONTINUOUS or DISCRETE.
             unit_type: EnergyPlus unit category (Dimensionless / Temperature / Power / ...).
         """
-        if idf.has("ScheduleTypeLimits", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(ScheduleTypeLimits, name):
             return _err(f"ScheduleTypeLimits '{name}' already exists.")
         try:
             idf.add(
@@ -52,9 +75,12 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                     unit_type=unit_type,
                 )
             )
+            data = idf.get(ScheduleTypeLimits, name)
+            if data is None:
+                raise ValueError("ScheduleTypeLimits not found")
             return _ok(
                 f"ScheduleTypeLimits '{name}' created successfully.",
-                idf.get("ScheduleTypeLimits", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating ScheduleTypeLimits '{name}': {e}")
@@ -109,7 +135,9 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                   },
                 ]
         """
-        if idf.has("Schedule:Compact", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(ScheduleCompact, name):
             return _err(f"Schedule:Compact '{name}' already exists.")
         try:
             # Validate and flatten the nested data structure
@@ -138,19 +166,25 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     @tool
     def list_schedules() -> str:
         """List all Schedule:Compact objects."""
-        items = [s.model_dump() for s in idf.all_of_type("Schedule:Compact").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [s.model_dump() for s in idf.all_of_type(ScheduleCompact).values()]
         return _ok(f"Listed {len(items)} Schedule:Compact objects.", items)
 
     @tool
     def list_schedule_type_limits() -> str:
         """List all ScheduleTypeLimits objects."""
-        items = [s.model_dump() for s in idf.all_of_type("ScheduleTypeLimits").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [s.model_dump() for s in idf.all_of_type(ScheduleTypeLimits).values()]
         return _ok(f"Listed {len(items)} ScheduleTypeLimits objects.", items)
 
     @tool
     def get_schedule(name: str) -> str:
         """Read a Schedule:Compact by name."""
-        obj = idf.get("Schedule:Compact", name)
+        if idf is None:
+            raise ValueError("IDF is None")
+        obj = idf.get(ScheduleCompact, name)
         if obj is None:
             return _err(f"Schedule:Compact '{name}' not found.")
         return _ok(f"Schedule:Compact '{name}' read successfully.", obj.model_dump())
@@ -172,7 +206,9 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             schedule_type_limits_name: New ScheduleTypeLimits name.
             data: New nested Through/Days/Times structure (replaces all).
         """
-        obj = idf.get("Schedule:Compact", name)
+        if idf is None:
+            raise ValueError("IDF is None")
+        obj = idf.get(ScheduleCompact, name)
         if obj is None:
             return _err(f"Schedule:Compact '{name}' not found.")
         try:
@@ -197,23 +233,25 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     @tool
     def delete_schedule(name: str) -> str:
         """Delete a Schedule:Compact. Fails if referenced."""
-        if not idf.has("Schedule:Compact", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if not idf.has(ScheduleCompact, name):
             return _err(f"Schedule:Compact '{name}' not found.")
         refs = []
-        for t in idf.all_of_type("HVACTemplate:Thermostat").values():
+        for t in idf.all_of_type(HVACTemplateThermostat).values():
             if t.heating_setpoint_schedule_name == name:
                 refs.append(f"Thermostat:{t.name}")
             if t.cooling_setpoint_schedule_name == name:
                 refs.append(f"Thermostat:{t.name}")
-        for ils in idf.all_of_type("HVACTemplate:Zone:IdealLoadsAirSystem").values():
+        for ils in idf.all_of_type(HVACTemplateZoneIdealLoadsAirSystem).values():
             if ils.system_availability_schedule_name == name:
                 refs.append(f"IdealLoadsSystem:{ils.zone_name}")
-        for p in idf.all_of_type("People").values():
+        for p in idf.all_of_type(People).values():
             if p.number_of_people_schedule_name == name:
                 refs.append(f"People:{p.name}")
             if p.activity_level_schedule_name == name:
                 refs.append(f"People:{p.name}")
-        for lt in idf.all_of_type("Lights").values():
+        for lt in idf.all_of_type(Lights).values():
             if lt.schedule_name == name:
                 refs.append(f"Lights:{lt.name}")
         if refs:

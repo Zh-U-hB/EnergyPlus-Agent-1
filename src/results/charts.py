@@ -514,10 +514,10 @@ def _pmv_comfort_band_traces(
 
     pmv = np.asarray(
         pmv_ppd_iso(
-            tdb=t_flat,
-            tr=tr_flat,
+            tdb=t_flat.tolist(),
+            tr=tr_flat.tolist(),
             vr=_PMV_VR,
-            rh=rh_flat,
+            rh=rh_flat.tolist(),
             met=_PMV_MET,
             clo=_PMV_CLO,
             wme=0,

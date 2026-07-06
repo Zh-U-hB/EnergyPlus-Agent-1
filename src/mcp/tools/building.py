@@ -1,6 +1,6 @@
 from typing import Any
 
-from idfpy.models.simulation import Building
+from idfpy.models import Building
 
 from src.mcp.state import ConfigState
 from src.mcp.tools.base import BaseTool, normalize_payload
@@ -24,7 +24,7 @@ class BuildingTool(BaseTool):
         return Building(**payload)
 
     def _get_name(self, instance: Building) -> str:
-        return instance.name
+        return instance.name or "NONE"
 
     def _check_references(self, name: str) -> list[str]:
         return []

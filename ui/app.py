@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import gradio as gr
+from langchain_core.runnables import RunnableConfig
 
 from src.agent import AgentState, SimContext, build_graph
 from src.agent.runner import run_session
@@ -494,7 +495,7 @@ def run_agent(
                 _get_graph(),
                 initial,
                 context,
-                config,
+                RunnableConfig(configurable=config),
                 on_interrupt=on_interrupt,
                 on_event=on_event,
             )

@@ -1,8 +1,8 @@
 from typing import Any
 
 from idfpy import IDF
-from idfpy.models.location import RunPeriod, SiteLocation
-from idfpy.models.outputs import (
+from idfpy.models import (
+    GlobalGeometryRules,
     OutputControlTableStyle,
     OutputDiagnostics,
     OutputDiagnosticsDiagnosticsItem,
@@ -10,9 +10,12 @@ from idfpy.models.outputs import (
     OutputTableSummaryReportsReportsItem,
     OutputVariable,
     OutputVariableDictionary,
+    RunPeriod,
+    SimulationControl,
+    SiteLocation,
+    Timestep,
+    Version,
 )
-from idfpy.models.simulation import SimulationControl, Timestep, Version
-from idfpy.models.thermal_zones import GlobalGeometryRules
 
 from src.converters.base_converter import BaseConverter
 from src.validator.data_model import (

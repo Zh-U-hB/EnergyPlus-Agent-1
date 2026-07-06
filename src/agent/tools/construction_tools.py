@@ -1,8 +1,10 @@
 import json
 
-from idfpy.models.constructions import (
+from idfpy.models import (
+    BuildingSurfaceDetailed,
     Construction,
     ConstructionAirBoundary,
+    FenestrationSurfaceDetailed,
 )
 from langchain_core.tools import BaseTool, tool
 
@@ -77,6 +79,8 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             layers: Material names from outside to inside. All names must
                     already exist in the materials list. >= 1 layer.
         """
+        if idf is None:
+            raise ValueError("IDF is None")
         if idf.has("Construction", name):
             return _err(f"Construction '{name}' already exists.")
         if idf.has("Construction:AirBoundary", name):
@@ -100,9 +104,12 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             for i, layer_name in enumerate(layers):
                 kwargs[_LAYER_FIELDS[i]] = layer_name
             idf.add(Construction(**kwargs))
+            data = idf.get(Construction, name)
+            if data is None:
+                raise ValueError("Construction not found")
             return _ok(
                 f"Construction '{name}' created successfully.",
-                idf.get("Construction", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating construction '{name}': {e}")
@@ -133,6 +140,8 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             simple_mixing_schedule_name: Optional Schedule:Compact name for the
                 SimpleMixing rate. Only valid with method 'SimpleMixing'.
         """
+        if idf is None:
+            raise ValueError("IDF is None")
         if idf.has("Construction:AirBoundary", name):
             return _err(f"Construction:AirBoundary '{name}' already exists.")
         if idf.has("Construction", name):
@@ -153,9 +162,12 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                 if simple_mixing_schedule_name is not None:
                     kwargs["simple_mixing_schedule_name"] = simple_mixing_schedule_name
             idf.add(ConstructionAirBoundary(**kwargs))
+            data = idf.get(ConstructionAirBoundary, name)
+            if data is None:
+                raise ValueError("Construction:AirBoundary not found")
             return _ok(
                 f"Construction:AirBoundary '{name}' created successfully.",
-                idf.get("Construction:AirBoundary", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating Construction:AirBoundary '{name}': {e}")
@@ -164,6 +176,8 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     def list_constructions() -> str:
         """List all constructions (layered Construction + Construction:AirBoundary)."""
         items = []
+        if idf is None:
+            raise ValueError("IDF is None")
         for t in _ALL_CONSTRUCTION_TYPES:
             for obj in idf.all_of_type(t).values():
                 items.append({"type": t, **obj.model_dump()})
@@ -193,10 +207,12 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             layers: New ordered list of material names (outside → inside).
                     All names must already exist. 1-10 layers.
         """
-        obj = idf.get("Construction", name)
+        if idf is None:
+            raise ValueError("IDF is None")
+        obj = idf.get(Construction, name)
         if obj is None:
             # Distinguish "not found" from "is an AirBoundary (wrong tool)".
-            if idf.has("Construction:AirBoundary", name):
+            if idf.has(ConstructionAirBoundary, name):
                 return _err(
                     f"'{name}' is a Construction:AirBoundary and has no layers; "
                     f"use delete_construction + create_airboundary_construction."
@@ -234,10 +250,12 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if const_type is None:
             return _err(f"Construction '{name}' not found.")
         refs = []
-        for s in idf.all_of_type("BuildingSurface:Detailed").values():
+        if idf is None:
+            raise ValueError("IDF is None")
+        for s in idf.all_of_type(BuildingSurfaceDetailed).values():
             if s.construction_name == name:
                 refs.append(f"Surface:{s.name}")
-        for f in idf.all_of_type("FenestrationSurface:Detailed").values():
+        for f in idf.all_of_type(FenestrationSurfaceDetailed).values():
             if f.construction_name == name:
                 refs.append(f"Fenestration:{f.name}")
         if refs:
@@ -252,6 +270,8 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
     def list_materials() -> str:
         """Read-only: list all materials available for use as construction layers."""
         items = []
+        if idf is None:
+            raise ValueError("IDF is None")
         for t in _ALL_MATERIAL_TYPES:
             for obj in idf.all_of_type(t).values():
                 items.append({"type": t, **obj.model_dump()})

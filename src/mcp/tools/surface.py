@@ -1,8 +1,9 @@
 from typing import Any
 
-from idfpy.models.thermal_zones import (
+from idfpy.models import (
     BuildingSurfaceDetailed,
     BuildingSurfaceDetailedVerticesItem,
+    FenestrationSurfaceDetailed,
 )
 
 from src.mcp.state import ConfigState
@@ -52,7 +53,7 @@ class SurfaceTool(BaseTool):
 
     def _check_references(self, name: str) -> list[str]:
         refs = []
-        for fen in self.state.idf.all_of_type("FenestrationSurface:Detailed").values():
+        for fen in self.state.idf.all_of_type(FenestrationSurfaceDetailed).values():
             if fen.building_surface_name == name:
                 refs.append(f"FenestrationSurface:{fen.name}")
         return refs

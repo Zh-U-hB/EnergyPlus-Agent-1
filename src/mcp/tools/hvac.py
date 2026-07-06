@@ -1,6 +1,6 @@
 from typing import Any
 
-from idfpy.models.hvac_templates import (
+from idfpy.models import (
     HVACTemplateThermostat,
     HVACTemplateZoneIdealLoadsAirSystem,
 )
@@ -26,7 +26,7 @@ class ThermostatTool(BaseTool):
     def _check_references(self, name: str) -> list[str]:
         refs = []
         for ils in self.state.idf.all_of_type(
-            "HVACTemplate:Zone:IdealLoadsAirSystem"
+            HVACTemplateZoneIdealLoadsAirSystem
         ).values():
             if ils.template_thermostat_name == name:
                 refs.append(f"IdealLoadsSystem:{ils.zone_name}")

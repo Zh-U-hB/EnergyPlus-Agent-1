@@ -1,5 +1,5 @@
 from idfpy import IDF
-from idfpy.models.internal_gains import People
+from idfpy.models import People
 
 from src.converters.base_converter import BaseConverter
 from src.validator.data_model import PeopleSchema

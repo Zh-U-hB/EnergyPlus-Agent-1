@@ -1,7 +1,7 @@
 from typing import Any
 
 from idfpy import IDF
-from idfpy.models.constructions import Construction
+from idfpy.models import Construction
 
 from src.converters.base_converter import BaseConverter
 from src.utils.logging import get_logger

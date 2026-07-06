@@ -1,6 +1,6 @@
 import json
 
-from idfpy.models.thermal_zones import Zone
+from idfpy.models import Zone
 from langchain_core.messages import ToolMessage
 
 from src.agent.nodes import zone_validator as zv

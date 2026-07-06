@@ -1,5 +1,5 @@
 from idfpy import IDF
-from idfpy.models.internal_gains import Lights
+from idfpy.models import Lights
 
 from src.converters.base_converter import BaseConverter
 from src.validator.data_model import LightSchema

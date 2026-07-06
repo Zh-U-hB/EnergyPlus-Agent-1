@@ -8,7 +8,13 @@ zone/construction when it could simply build every surface whose upstream
 already exists.
 """
 
-from idfpy.models.thermal_zones import Zone
+from idfpy.models import (
+    BuildingSurfaceDetailed,
+    BuildingSurfaceDetailedVerticesItem,
+    Construction,
+    Material,
+    Zone,
+)
 from langchain_core.messages import AIMessage
 
 from src.agent.nodes._share import MAX_SELF_REPAIR_ROUNDS, invoke_with_self_repair
@@ -44,11 +50,6 @@ class _BuildsOnSecondCallAgent:
         if self.calls == 1:
             return {"messages": [AIMessage(content="did nothing yet")]}
         # Round 2: actually build a complete, valid surface.
-        from idfpy.models.constructions import Construction, Material
-        from idfpy.models.thermal_zones import (
-            BuildingSurfaceDetailed,
-            BuildingSurfaceDetailedVerticesItem,
-        )
 
         self.local.idf.add(
             Material(

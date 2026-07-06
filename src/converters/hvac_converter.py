@@ -1,7 +1,7 @@
 from typing import Any
 
 from idfpy import IDF
-from idfpy.models.hvac_templates import (
+from idfpy.models import (
     HVACTemplateThermostat,
     HVACTemplateZoneIdealLoadsAirSystem,
 )
@@ -81,7 +81,7 @@ class HVACConverter(BaseConverter):
             elif isinstance(val_data, HVACTemplateZoneIdealLoadsAirSystemSchema):
                 # HVACTemplateZoneIdealLoadsAirSystem has no 'name' field in idfpy;
                 # objects are auto-indexed, so we check by zone_name in all_of_type.
-                existing = self.idf.all_of_type("HVACTemplate:Zone:IdealLoadsAirSystem")
+                existing = self.idf.all_of_type(HVACTemplateZoneIdealLoadsAirSystem)
                 already_exists = any(
                     obj.zone_name == val_data.zone_name for obj in existing.values()
                 )

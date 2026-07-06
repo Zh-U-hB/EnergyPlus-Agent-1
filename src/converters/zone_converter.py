@@ -1,7 +1,7 @@
 from typing import Any
 
 from idfpy import IDF
-from idfpy.models.thermal_zones import Zone
+from idfpy.models import Zone
 
 from src.converters.base_converter import BaseConverter
 from src.validator.data_model import ZoneSchema

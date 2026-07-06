@@ -175,31 +175,7 @@ def _idf_has_objects(cs: ConfigState) -> bool:
     real model (e.g. after ``load_idf``), so this is the reliable way to
     tell whether *cs* actually carries a model.
     """
-    idf = cs._idf
-    if idf is None:
-        return False
-    try:
-        return any(
-            idf.all_of_type(t)
-            for t in (
-                "Zone",
-                "Material",
-                "Material:NoMass",
-                "Material:AirGap",
-                "WindowMaterial:SimpleGlazingSystem",
-                "Construction",
-                "BuildingSurface:Detailed",
-                "FenestrationSurface:Detailed",
-                "Schedule:Compact",
-                "ScheduleTypeLimits",
-                "HVACTemplate:Thermostat",
-                "HVACTemplate:Zone:IdealLoadsAirSystem",
-                "People",
-                "Lights",
-            )
-        )
-    except Exception:
-        return False
+    return cs._has_idf_objects()
 
 
 def _merge_idf(old: ConfigState, new: ConfigState) -> Any:
@@ -216,6 +192,9 @@ def _merge_idf(old: ConfigState, new: ConfigState) -> Any:
     default empty IDF created by ConfigState's constructor).
     """
     from idfpy import IDF
+
+    if old._idf is None or new._idf is None:
+        raise ValueError("IDF is None")
 
     old_d = old._idf.to_dict() if _idf_has_objects(old) else {}
     new_d = new._idf.to_dict() if _idf_has_objects(new) else {}

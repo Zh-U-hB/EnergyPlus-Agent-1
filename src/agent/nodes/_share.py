@@ -7,7 +7,7 @@ nodes-internal — no other part of the agent package uses these.
 from __future__ import annotations
 
 import json
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from langchain_core.messages import AnyMessage, HumanMessage
 from langgraph.graph.state import CompiledStateGraph
@@ -93,7 +93,7 @@ VALIDATION_ERROR_HEADER: Final[str] = (
 # roll back to the earliest one: fixing upstream often resolves downstream
 # refs as a side effect (and downstream phases re-run anyway via normal
 # graph edges from the rollback target).
-PIPELINE_ORDER: Final[tuple[str, ...]] = (
+PIPELINE_ORDER: Final[tuple[PIPELINE_PHASE, ...]] = (
     "zone",
     "material",
     "schedule",
@@ -104,6 +104,18 @@ PIPELINE_ORDER: Final[tuple[str, ...]] = (
     "people",
     "lights",
 )
+
+PIPELINE_PHASE: Final = Literal[
+    "zone",
+    "material",
+    "schedule",
+    "construction",
+    "surface",
+    "fenestration",
+    "hvac",
+    "people",
+    "lights",
+]
 
 # Maps a substring of an error message to the phase that OWNS the broken
 # reference. validate_references() phrases errors as

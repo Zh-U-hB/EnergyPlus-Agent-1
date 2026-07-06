@@ -16,15 +16,13 @@ as glazing:
   - WindowMaterial:Glazing (true per-pane glass layer)
 """
 
-from idfpy.models.constructions import (
+from idfpy.models import (
+    BuildingSurfaceDetailed,
+    BuildingSurfaceDetailedVerticesItem,
     Construction,
     Material,
     WindowMaterialGlazing,
     WindowMaterialSimpleGlazingSystem,
-)
-from idfpy.models.thermal_zones import (
-    BuildingSurfaceDetailed,
-    BuildingSurfaceDetailedVerticesItem,
     Zone,
 )
 

@@ -8,23 +8,29 @@ into its specs, so it can fix its objects via `update_*` tools. After
 max_retries rounds, fall through to human-in-the-loop review.
 """
 
-from typing import Literal
+from typing import Literal, cast
 
 from langchain_core.messages import RemoveMessage
 from langgraph.types import Command, interrupt
 
-from src.agent.nodes._share import PIPELINE_ORDER, classify_errors, earliest_phase
+from src.agent.nodes._share import (
+    PIPELINE_PHASE,
+    classify_errors,
+    earliest_phase,
+)
 from src.agent.state import AgentState
 
 # Every node name validate can route to. Kept explicit (instead of just
 # ["simulate", "intake", "revise"]) so LangGraph recognizes directed
 # rollback targets in the Command return type.
-_RollbackTarget = Literal[
-    "simulate",
-    "intake",
-    "revise",
-    *PIPELINE_ORDER,
-]
+_RollbackTarget = (
+    Literal[
+        "simulate",
+        "intake",
+        "revise",
+    ]
+    | PIPELINE_PHASE
+)
 
 
 def validate_node(state: AgentState) -> Command[_RollbackTarget]:
@@ -55,8 +61,8 @@ def validate_node(state: AgentState) -> Command[_RollbackTarget]:
             # Directed rollback: hop straight to the phase that owns the
             # broken reference. is_revision=True steers its agent toward
             # update_* / delete_* over full recreation.
-            return Command(
-                goto=target,
+            return Command[_RollbackTarget](
+                goto=cast(PIPELINE_PHASE, target),
                 update={
                     "validation_errors": errors,
                     "retry_count": state.retry_count + 1,
@@ -68,7 +74,7 @@ def validate_node(state: AgentState) -> Command[_RollbackTarget]:
         # Unclassifiable errors: fall back to the entry node for a full
         # re-intake / re-revise pass.
         entry = "revise" if state.is_revision else "intake"
-        return Command(
+        return Command[_RollbackTarget](
             goto=entry,
             update={
                 "validation_errors": errors,
@@ -89,12 +95,12 @@ def validate_node(state: AgentState) -> Command[_RollbackTarget]:
     )
 
     if decision.get("approved"):
-        return Command(goto="simulate")
+        return Command[_RollbackTarget](goto="simulate")
 
     # On rejection, route back to the entry node matching the current mode:
     # revision turns loop back to revise, first-run turns loop back to intake.
     entry = "revise" if state.is_revision else "intake"
-    return Command(
+    return Command[_RollbackTarget](
         goto=entry,
         update={
             "user_input": decision.get("feedback", state.user_input),

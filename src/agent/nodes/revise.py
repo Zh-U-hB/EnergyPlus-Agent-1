@@ -121,6 +121,8 @@ def _summarize_config_for_llm(state: AgentState) -> str:
     dumps) to stay within token limits on large models.
     """
     idf = state.config_state._idf
+    if idf is None:
+        raise ValueError("IDF is None")
     lines: list[str] = ["## Existing model inventory (modify these — do NOT rebuild):"]
     for obj_type, _label, fields in _SUMMARY_SPECS:
         items = idf.all_of_type(obj_type)

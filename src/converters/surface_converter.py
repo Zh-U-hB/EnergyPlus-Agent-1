@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from idfpy import IDF
-from idfpy.models.thermal_zones import (
+from idfpy.models import (
     BuildingSurfaceDetailed,
     BuildingSurfaceDetailedVerticesItem,
 )

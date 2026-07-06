@@ -124,7 +124,7 @@ def simulate_node(
         errors_for_phase = (
             [error_block] if error_block else ["EnergyPlus simulation failed."]
         )
-        return Command(
+        return Command[_SimRoute](
             goto="revise",
             update={
                 "simulation_errors": errors_for_phase,
@@ -147,7 +147,7 @@ def simulate_node(
         if response.success and isinstance(response.data, dict):
             message += f" idf={response.data.get('idf_path')}"
 
-    return Command(
+    return Command[_SimRoute](
         goto="analyze",
         update={"messages": [AIMessage(content=message)]},
     )

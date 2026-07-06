@@ -1,4 +1,4 @@
-from idfpy.models.thermal_zones import Zone
+from idfpy.models import Zone
 from langchain_core.messages import AIMessage
 
 from src.agent.nodes import zone as zone_module

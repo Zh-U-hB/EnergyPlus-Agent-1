@@ -18,10 +18,11 @@ the LLM had already fixed the reference. The fix re-derives the gap from
 the LIVE IDF via detect_upstream_gap_from_state.
 """
 
-from idfpy.models.constructions import Construction, Material
-from idfpy.models.thermal_zones import (
+from idfpy.models import (
     BuildingSurfaceDetailed,
     BuildingSurfaceDetailedVerticesItem,
+    Construction,
+    Material,
     Zone,
 )
 from langchain_core.messages import AIMessage, ToolMessage
