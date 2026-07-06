@@ -1,8 +1,11 @@
 import json
 
+from idfpy.models.hvac_templates import (
+    HVACTemplateThermostat,
+    HVACTemplateZoneIdealLoadsAirSystem,
+)
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.hvac_templates import HVACTemplateThermostat, HVACTemplateZoneIdealLoadsAirSystem
 from src.mcp.state import ConfigState
 
 
@@ -39,19 +42,27 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if heating_setpoint_schedule_name not in schedule_names:
             return _err(
                 f"Schedule '{heating_setpoint_schedule_name}' not found.",
-                {"missing_ref": "Schedule:Compact", "missing_name": heating_setpoint_schedule_name},
+                {
+                    "missing_ref": "Schedule:Compact",
+                    "missing_name": heating_setpoint_schedule_name,
+                },
             )
         if cooling_setpoint_schedule_name not in schedule_names:
             return _err(
                 f"Schedule '{cooling_setpoint_schedule_name}' not found.",
-                {"missing_ref": "Schedule:Compact", "missing_name": cooling_setpoint_schedule_name},
+                {
+                    "missing_ref": "Schedule:Compact",
+                    "missing_name": cooling_setpoint_schedule_name,
+                },
             )
         try:
-            idf.add(HVACTemplateThermostat(
-                name=name,
-                heating_setpoint_schedule_name=heating_setpoint_schedule_name,
-                cooling_setpoint_schedule_name=cooling_setpoint_schedule_name,
-            ))
+            idf.add(
+                HVACTemplateThermostat(
+                    name=name,
+                    heating_setpoint_schedule_name=heating_setpoint_schedule_name,
+                    cooling_setpoint_schedule_name=cooling_setpoint_schedule_name,
+                )
+            )
             return _ok(
                 f"Thermostat '{name}' created successfully.",
                 idf.get("HVACTemplate:Thermostat", name).model_dump(),
@@ -86,32 +97,48 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if not idf.has("HVACTemplate:Thermostat", template_thermostat_name):
             return _err(
                 f"Thermostat '{template_thermostat_name}' not found.",
-                {"missing_ref": "HVACTemplate:Thermostat", "missing_name": template_thermostat_name},
+                {
+                    "missing_ref": "HVACTemplate:Thermostat",
+                    "missing_name": template_thermostat_name,
+                },
             )
         if system_availability_schedule_name and not idf.has(
             "Schedule:Compact", system_availability_schedule_name
         ):
             return _err(
                 f"Schedule '{system_availability_schedule_name}' not found.",
-                {"missing_ref": "Schedule:Compact", "missing_name": system_availability_schedule_name},
+                {
+                    "missing_ref": "Schedule:Compact",
+                    "missing_name": system_availability_schedule_name,
+                },
             )
         try:
-            idf.add(HVACTemplateZoneIdealLoadsAirSystem(
-                zone_name=zone_name,
-                template_thermostat_name=template_thermostat_name,
-                system_availability_schedule_name=system_availability_schedule_name or None,
-            ))
+            idf.add(
+                HVACTemplateZoneIdealLoadsAirSystem(
+                    zone_name=zone_name,
+                    template_thermostat_name=template_thermostat_name,
+                    system_availability_schedule_name=system_availability_schedule_name
+                    or None,
+                )
+            )
             return _ok(
                 f"IdealLoadsAirSystem for zone '{zone_name}' created successfully.",
-                {"zone_name": zone_name, "template_thermostat_name": template_thermostat_name},
+                {
+                    "zone_name": zone_name,
+                    "template_thermostat_name": template_thermostat_name,
+                },
             )
         except Exception as e:
-            return _err(f"Error creating IdealLoadsAirSystem for zone '{zone_name}': {e}")
+            return _err(
+                f"Error creating IdealLoadsAirSystem for zone '{zone_name}': {e}"
+            )
 
     @tool
     def list_thermostats() -> str:
         """List all thermostats."""
-        items = [t.model_dump() for t in idf.all_of_type("HVACTemplate:Thermostat").values()]
+        items = [
+            t.model_dump() for t in idf.all_of_type("HVACTemplate:Thermostat").values()
+        ]
         return _ok(f"Listed {len(items)} thermostats.", items)
 
     @tool
@@ -140,14 +167,20 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if obj is None:
             return _err(f"Thermostat '{name}' not found.")
         try:
-            schedule_names = {s.name for s in idf.all_of_type("Schedule:Compact").values()}
+            schedule_names = {
+                s.name for s in idf.all_of_type("Schedule:Compact").values()
+            }
             if heating_setpoint_schedule_name is not None:
                 if heating_setpoint_schedule_name not in schedule_names:
-                    return _err(f"Schedule '{heating_setpoint_schedule_name}' not found.")
+                    return _err(
+                        f"Schedule '{heating_setpoint_schedule_name}' not found."
+                    )
                 obj.heating_setpoint_schedule_name = heating_setpoint_schedule_name
             if cooling_setpoint_schedule_name is not None:
                 if cooling_setpoint_schedule_name not in schedule_names:
-                    return _err(f"Schedule '{cooling_setpoint_schedule_name}' not found.")
+                    return _err(
+                        f"Schedule '{cooling_setpoint_schedule_name}' not found."
+                    )
                 obj.cooling_setpoint_schedule_name = cooling_setpoint_schedule_name
             return _ok(f"Thermostat '{name}' updated successfully.", obj.model_dump())
         except Exception as e:
@@ -177,8 +210,12 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                 obj.template_thermostat_name = template_thermostat_name
             if system_availability_schedule_name is not None:
                 if not idf.has("Schedule:Compact", system_availability_schedule_name):
-                    return _err(f"Schedule '{system_availability_schedule_name}' not found.")
-                obj.system_availability_schedule_name = system_availability_schedule_name
+                    return _err(
+                        f"Schedule '{system_availability_schedule_name}' not found."
+                    )
+                obj.system_availability_schedule_name = (
+                    system_availability_schedule_name
+                )
             return _ok(
                 f"IdealLoadsAirSystem for zone '{zone_name}' updated successfully.",
                 obj.model_dump(),
@@ -238,6 +275,10 @@ def make_hvac_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         list_schedules,
     ]
     if rag is not None:
-        from src.agent.tools.rag_tools import TABLE_SIZING_PERIOD_DESIGN_DAY, make_rag_tool
+        from src.agent.tools.rag_tools import (
+            TABLE_SIZING_PERIOD_DESIGN_DAY,
+            make_rag_tool,
+        )
+
         tools.append(make_rag_tool([TABLE_SIZING_PERIOD_DESIGN_DAY], rag=rag))
     return tools

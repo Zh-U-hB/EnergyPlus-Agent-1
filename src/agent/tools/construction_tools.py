@@ -1,21 +1,24 @@
 import json
 
-from langchain_core.tools import BaseTool, tool
-
 from idfpy.models.constructions import (
     Construction,
     ConstructionAirBoundary,
-    Material,
-    MaterialAirGap,
-    MaterialNoMass,
-    WindowMaterialGlazing,
-    WindowMaterialSimpleGlazingSystem,
 )
+from langchain_core.tools import BaseTool, tool
+
 from src.mcp.state import ConfigState
 
 _LAYER_FIELDS = [
-    "outside_layer", "layer_2", "layer_3", "layer_4", "layer_5",
-    "layer_6", "layer_7", "layer_8", "layer_9", "layer_10",
+    "outside_layer",
+    "layer_2",
+    "layer_3",
+    "layer_4",
+    "layer_5",
+    "layer_6",
+    "layer_7",
+    "layer_8",
+    "layer_9",
+    "layer_10",
 ]
 
 _ALL_MATERIAL_TYPES = [
@@ -86,7 +89,11 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if missing:
             return _err(
                 f"Materials not found: {missing}. Create them first.",
-                {"missing": missing, "missing_ref": "Material", "missing_name": missing[0]},
+                {
+                    "missing": missing,
+                    "missing_ref": "Material",
+                    "missing_name": missing[0],
+                },
             )
         try:
             kwargs: dict = {"name": name}
@@ -129,7 +136,9 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if idf.has("Construction:AirBoundary", name):
             return _err(f"Construction:AirBoundary '{name}' already exists.")
         if idf.has("Construction", name):
-            return _err(f"Construction '{name}' already exists (as a layered Construction).")
+            return _err(
+                f"Construction '{name}' already exists (as a layered Construction)."
+            )
         try:
             kwargs: dict = {"name": name, "air_exchange_method": air_exchange_method}
             if air_exchange_method == "SimpleMixing":
@@ -138,7 +147,9 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                         "simple_mixing_air_changes_per_hour is required when "
                         "air_exchange_method is 'SimpleMixing'."
                     )
-                kwargs["simple_mixing_air_changes_per_hour"] = simple_mixing_air_changes_per_hour
+                kwargs["simple_mixing_air_changes_per_hour"] = (
+                    simple_mixing_air_changes_per_hour
+                )
                 if simple_mixing_schedule_name is not None:
                     kwargs["simple_mixing_schedule_name"] = simple_mixing_schedule_name
             idf.add(ConstructionAirBoundary(**kwargs))
@@ -197,7 +208,11 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if missing:
             return _err(
                 f"Materials not found: {missing}.",
-                {"missing": missing, "missing_ref": "Material", "missing_name": missing[0]},
+                {
+                    "missing": missing,
+                    "missing_ref": "Material",
+                    "missing_name": missing[0],
+                },
             )
         try:
             # Clear existing layers then set new ones
@@ -205,8 +220,7 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                 setattr(obj, lf, None)
             for i, layer_name in enumerate(layers):
                 setattr(obj, _LAYER_FIELDS[i], layer_name)
-            return _ok(f"Construction '{name}' updated successfully.",
-                       obj.model_dump())
+            return _ok(f"Construction '{name}' updated successfully.", obj.model_dump())
         except Exception as e:
             return _err(f"Error updating construction '{name}': {e}")
 
@@ -258,5 +272,6 @@ def make_construction_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             TABLE_CONSTRUCTIONS,
             make_rag_tool,
         )
+
         tools.append(make_rag_tool([TABLE_CONSTRUCTIONS, TABLE_ALL_MATERIALS], rag=rag))
     return tools

@@ -41,7 +41,9 @@ class IdealLoadsSystemTool(BaseTool):
     def object_types(self) -> tuple[str, ...]:
         return ("HVACTemplate:Zone:IdealLoadsAirSystem",)
 
-    def _create_model(self, data: dict[str, Any]) -> HVACTemplateZoneIdealLoadsAirSystem:
+    def _create_model(
+        self, data: dict[str, Any]
+    ) -> HVACTemplateZoneIdealLoadsAirSystem:
         return HVACTemplateZoneIdealLoadsAirSystem(**normalize_payload(data))
 
     def _get_name(self, instance: HVACTemplateZoneIdealLoadsAirSystem) -> str:

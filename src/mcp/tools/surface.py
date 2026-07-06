@@ -9,7 +9,9 @@ from src.mcp.state import ConfigState
 from src.mcp.tools.base import BaseTool, normalize_payload
 
 
-def _vertex_items(vertices: list[Any] | None) -> list[BuildingSurfaceDetailedVerticesItem]:
+def _vertex_items(
+    vertices: list[Any] | None,
+) -> list[BuildingSurfaceDetailedVerticesItem]:
     items: list[BuildingSurfaceDetailedVerticesItem] = []
     for vertex in vertices or []:
         if isinstance(vertex, dict):

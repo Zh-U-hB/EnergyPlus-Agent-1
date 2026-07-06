@@ -1,11 +1,11 @@
 import json
 
-from langchain_core.tools import BaseTool, tool
-
 from idfpy.models.thermal_zones import (
     BuildingSurfaceDetailed,
     BuildingSurfaceDetailedVerticesItem,
 )
+from langchain_core.tools import BaseTool, tool
+
 from src.mcp.state import ConfigState
 
 
@@ -74,17 +74,19 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
                 )
                 for v in vertices
             ]
-            idf.add(BuildingSurfaceDetailed(
-                name=name,
-                surface_type=surface_type,
-                construction_name=construction_name,
-                zone_name=zone_name,
-                outside_boundary_condition=outside_boundary_condition,
-                outside_boundary_condition_object=outside_boundary_condition_object,
-                sun_exposure=sun_exposure,
-                wind_exposure=wind_exposure,
-                vertices=vertex_items,
-            ))
+            idf.add(
+                BuildingSurfaceDetailed(
+                    name=name,
+                    surface_type=surface_type,
+                    construction_name=construction_name,
+                    zone_name=zone_name,
+                    outside_boundary_condition=outside_boundary_condition,
+                    outside_boundary_condition_object=outside_boundary_condition_object,
+                    sun_exposure=sun_exposure,
+                    wind_exposure=wind_exposure,
+                    vertices=vertex_items,
+                )
+            )
             return _ok(
                 f"Surface '{name}' created successfully.",
                 idf.get("BuildingSurface:Detailed", name).model_dump(),
@@ -95,7 +97,9 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_surfaces() -> str:
         """List all building surfaces."""
-        items = [s.model_dump() for s in idf.all_of_type("BuildingSurface:Detailed").values()]
+        items = [
+            s.model_dump() for s in idf.all_of_type("BuildingSurface:Detailed").values()
+        ]
         return _ok(f"Listed {len(items)} surfaces.", items)
 
     @tool
@@ -134,7 +138,9 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
         obj = idf.get("BuildingSurface:Detailed", name)
         if obj is None:
             return _err(f"Surface '{name}' not found.")
-        if construction_name is not None and not idf.has("Construction", construction_name):
+        if construction_name is not None and not idf.has(
+            "Construction", construction_name
+        ):
             return _err(
                 f"Construction '{construction_name}' not found.",
                 {"missing_ref": "Construction", "missing_name": construction_name},
@@ -152,7 +158,9 @@ def make_surface_tools(config: ConfigState) -> list[BaseTool]:
             if outside_boundary_condition is not None:
                 obj.outside_boundary_condition = outside_boundary_condition
             if outside_boundary_condition_object is not None:
-                obj.outside_boundary_condition_object = outside_boundary_condition_object
+                obj.outside_boundary_condition_object = (
+                    outside_boundary_condition_object
+                )
             if sun_exposure is not None:
                 obj.sun_exposure = sun_exposure
             if wind_exposure is not None:

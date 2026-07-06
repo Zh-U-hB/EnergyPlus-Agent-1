@@ -12,6 +12,7 @@ parse_tabular(csv_path)   -> dict
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,6 +56,7 @@ class SimulationResult:
 
 def _find_run_dir(output_dir: Path) -> Path | None:
     """Return the subdirectory (or output_dir itself) that holds eplusout.csv."""
+
     def _is_run_dir(d: Path) -> bool:
         return (d / "eplusout.csv").exists() or (d / "eplusout.end").exists()
 
@@ -102,7 +104,12 @@ def parse_timeseries(csv_path: Path) -> pd.DataFrame:
     for col in raw.columns:
         m = _COL_PATTERN.match(col.strip())
         if m:
-            key, var, unit, _freq = m.group(1), m.group(2).strip(), m.group(3), m.group(4)
+            key, var, unit, _freq = (
+                m.group(1),
+                m.group(2).strip(),
+                m.group(3),
+                m.group(4),
+            )
             if unit == "J":
                 unit = "kWh"
             tuples.append((key, var, unit))
@@ -112,7 +119,9 @@ def parse_timeseries(csv_path: Path) -> pd.DataFrame:
             rename[col] = (col, col, "")
 
     raw = raw.rename(columns=rename)
-    raw.columns = pd.MultiIndex.from_tuples(tuples, names=["zone_key", "variable", "unit"])
+    raw.columns = pd.MultiIndex.from_tuples(
+        tuples, names=["zone_key", "variable", "unit"]
+    )
 
     # Convert J → kWh
     for col in raw.columns:
@@ -172,27 +181,25 @@ def parse_tabular(csv_path: Path) -> dict:
             if j < len(lines):
                 header_parts = [p.strip() for p in lines[j].split(",")]
             j += 1
-            while j < len(lines) and lines[j].strip() and not lines[j].startswith("REPORT"):
+            while (
+                j < len(lines)
+                and lines[j].strip()
+                and not lines[j].startswith("REPORT")
+            ):
                 parts = [p.strip() for p in lines[j].split(",")]
                 if len(parts) >= 3 and parts[1] and not parts[1].startswith("Total"):
                     zname = parts[1].upper().replace(" ", "_")
                     row: dict = {"name": parts[1]}
                     # Typical columns: Area, Conditioned, PartOfTotal, Volume, Multipliers, ...
                     if len(parts) > 2:
-                        try:
+                        with contextlib.suppress(ValueError):
                             row["area_m2"] = float(parts[2])
-                        except ValueError:
-                            pass
                     if len(parts) > 6:
-                        try:
+                        with contextlib.suppress(ValueError):
                             row["multiplier"] = float(parts[6])
-                        except ValueError:
-                            pass
                     if len(parts) > 5:
-                        try:
+                        with contextlib.suppress(ValueError):
                             row["volume_m3"] = float(parts[5])
-                        except ValueError:
-                            pass
                     result["zone_summary"][zname] = row
                 j += 1
 
@@ -203,13 +210,15 @@ def parse_tabular(csv_path: Path) -> dict:
             while j < len(lines) and not lines[j].strip():
                 j += 1
             j += 1  # skip header row
-            while j < len(lines) and lines[j].strip() and not lines[j].startswith("REPORT"):
+            while (
+                j < len(lines)
+                and lines[j].strip()
+                and not lines[j].startswith("REPORT")
+            ):
                 parts = [p.strip() for p in lines[j].split(",")]
                 if len(parts) >= 3 and parts[1] == "Total Building Area":
-                    try:
+                    with contextlib.suppress(ValueError):
                         result["building_area_m2"] = float(parts[2])
-                    except ValueError:
-                        pass
                 j += 1
 
         # Site and Source Energy table
@@ -228,13 +237,15 @@ def parse_tabular(csv_path: Path) -> dict:
                     eui_col = ci
                     break
             j += 1  # move past header to first data row
-            while j < len(lines) and lines[j].strip() and not lines[j].startswith("REPORT"):
+            while (
+                j < len(lines)
+                and lines[j].strip()
+                and not lines[j].startswith("REPORT")
+            ):
                 parts = [p.strip() for p in lines[j].split(",")]
                 if len(parts) >= 3 and parts[1]:
-                    try:
+                    with contextlib.suppress(ValueError):
                         result["site_energy"][parts[1]] = float(parts[2])
-                    except ValueError:
-                        pass
                     # Extract EUI from "Total Site Energy" row
                     if (
                         result["eui_mj_per_m2"] is None
@@ -242,14 +253,16 @@ def parse_tabular(csv_path: Path) -> dict:
                         and eui_col is not None
                         and eui_col < len(parts)
                     ):
-                        try:
+                        with contextlib.suppress(ValueError):
                             result["eui_mj_per_m2"] = float(parts[eui_col])
-                        except ValueError:
-                            pass
                 j += 1
 
         # End Uses table — only the first occurrence (before "End Uses By Subcategory")
-        elif ln.strip() == "End Uses" and "subcategory" not in lines[i + 1].lower() if i + 1 < len(lines) else True:
+        elif (
+            ln.strip() == "End Uses" and "subcategory" not in lines[i + 1].lower()
+            if i + 1 < len(lines)
+            else True
+        ):
             # next non-empty line is header
             j = i + 1
             while j < len(lines) and not lines[j].strip():
@@ -267,7 +280,11 @@ def parse_tabular(csv_path: Path) -> dict:
             ]
             j += 1
             end_uses: list[dict] = []
-            while j < len(lines) and lines[j].strip() and not lines[j].startswith("REPORT"):
+            while (
+                j < len(lines)
+                and lines[j].strip()
+                and not lines[j].startswith("REPORT")
+            ):
                 parts = [p.strip() for p in lines[j].split(",")]
                 # parts[0] empty, parts[1] = use name, parts[2:] = values
                 if len(parts) >= 3 and parts[1]:
@@ -312,8 +329,7 @@ def load_results(output_dir: Path) -> SimulationResult:
     run_dir = _find_run_dir(output_dir)
     if run_dir is None:
         raise FileNotFoundError(
-            f"No EnergyPlus output found in {output_dir}. "
-            "Run the simulation first."
+            f"No EnergyPlus output found in {output_dir}. Run the simulation first."
         )
 
     csv_path = run_dir / "eplusout.csv"

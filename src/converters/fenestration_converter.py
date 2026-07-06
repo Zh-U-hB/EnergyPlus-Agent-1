@@ -46,21 +46,22 @@ class FenestrationConverter(BaseConverter):
 
         verts = val_data.vertices
         view_factor = val_data.view_factor_to_ground
-        kwargs: dict = dict(
-            name=val_data.name,
-            surface_type=val_data.surface_type,
-            construction_name=val_data.construction_name,
-            building_surface_name=val_data.building_surface_name,
-            outside_boundary_condition_object=val_data.outside_boundary_condition_object or None,
+        kwargs: dict = {
+            "name": val_data.name,
+            "surface_type": val_data.surface_type,
+            "construction_name": val_data.construction_name,
+            "building_surface_name": val_data.building_surface_name,
+            "outside_boundary_condition_object": val_data.outside_boundary_condition_object
+            or None,
             # Match "Autocalculate" case-insensitively (YAML/IDF commonly use
             # mixed case); the MCP fenestration tool normalizes the same way.
-            view_factor_to_ground=(
+            "view_factor_to_ground": (
                 None if str(view_factor).lower() == "autocalculate" else view_factor
             ),
-            frame_and_divider_name=val_data.frame_and_divider_name or None,
-            multiplier=val_data.multiplier,
-            number_of_vertices=len(verts),
-        )
+            "frame_and_divider_name": val_data.frame_and_divider_name or None,
+            "multiplier": val_data.multiplier,
+            "number_of_vertices": len(verts),
+        }
         for i, vertex in enumerate(verts, 1):
             kwargs[f"vertex_{i}_x_coordinate"] = float(vertex[0])
             kwargs[f"vertex_{i}_y_coordinate"] = float(vertex[1])

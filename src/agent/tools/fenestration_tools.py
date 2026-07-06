@@ -1,8 +1,8 @@
 import json
 
+from idfpy.models.thermal_zones import FenestrationSurfaceDetailed
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.thermal_zones import FenestrationSurfaceDetailed
 from src.mcp.geometry import surface_normal, surface_vertices
 from src.mcp.state import ConfigState
 
@@ -70,8 +70,15 @@ _GLAZING_SURFACE_TYPES = frozenset(
 # Construction layer fields, mirroring construction_tools._LAYER_FIELDS.
 _CONSTRUCTION_LAYER_FIELDS = (
     "outside_layer",
-    "layer_2", "layer_3", "layer_4", "layer_5",
-    "layer_6", "layer_7", "layer_8", "layer_9", "layer_10",
+    "layer_2",
+    "layer_3",
+    "layer_4",
+    "layer_5",
+    "layer_6",
+    "layer_7",
+    "layer_8",
+    "layer_9",
+    "layer_10",
 )
 
 
@@ -103,9 +110,8 @@ def _is_glazing_construction(idf, construction_name: str) -> bool:
         layer = getattr(const, field, None)
         if not layer:
             continue
-        if (
-            idf.has("WindowMaterial:SimpleGlazingSystem", layer)
-            or idf.has("WindowMaterial:Glazing", layer)
+        if idf.has("WindowMaterial:SimpleGlazingSystem", layer) or idf.has(
+            "WindowMaterial:Glazing", layer
         ):
             return True
     return False
@@ -163,12 +169,18 @@ def _align_window_to_wall(
     """
     wall_pts = _wall_vertices(wall_obj)
     if len(wall_pts) < 3:
-        return None, "Parent surface has fewer than 3 vertices; cannot verify window orientation."
+        return (
+            None,
+            "Parent surface has fewer than 3 vertices; cannot verify window orientation.",
+        )
 
     win_pts = [(float(v["X"]), float(v["Y"]), float(v["Z"])) for v in vertices]
     wall_n = _surface_normal(wall_pts)
     if wall_n == (0.0, 0.0, 0.0):
-        return None, "Parent surface has degenerate (zero-area) geometry; cannot verify window orientation."
+        return (
+            None,
+            "Parent surface has degenerate (zero-area) geometry; cannot verify window orientation.",
+        )
 
     # Plane anchor = centroid of the wall vertices. Newell's normal is the
     # normal of the best-fit plane, and that plane passes through the
@@ -187,14 +199,17 @@ def _align_window_to_wall(
     if max_dist > _COPLANARITY_TOLERANCE:
         return None, (
             "Window is not coplanar with the parent surface "
-            "(max vertex-to-plane distance=%.4fm, limit=%.4fm). Every window "
-            "vertex must share the wall's plane coordinate." % (max_dist, _COPLANARITY_TOLERANCE)
+            f"(max vertex-to-plane distance={max_dist:.4f}m, limit={_COPLANARITY_TOLERANCE:.4f}m). Every window "
+            "vertex must share the wall's plane coordinate."
         )
 
     # Check 2: normal direction (flip once if backward, then re-verify).
     win_n = _surface_normal(win_pts)
     if win_n == (0.0, 0.0, 0.0):
-        return None, "Window has degenerate (zero-area) geometry — vertices are collinear or duplicated."
+        return (
+            None,
+            "Window has degenerate (zero-area) geometry — vertices are collinear or duplicated.",
+        )
 
     dot = win_n[0] * wall_n[0] + win_n[1] * wall_n[1] + win_n[2] * wall_n[2]
     if dot < 0:
@@ -206,7 +221,7 @@ def _align_window_to_wall(
     if dot <= _NORMAL_DOT_TOLERANCE:
         return None, (
             "Window normal is still not consistent with the parent surface "
-            "after winding correction (dot=%.3f). Re-check the window geometry." % dot
+            f"after winding correction (dot={dot:.3f}). Re-check the window geometry."
         )
 
     aligned = [{"X": x, "Y": y, "Z": z} for (x, y, z) in win_pts]
@@ -281,7 +296,10 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
         if not idf.has("BuildingSurface:Detailed", building_surface_name):
             return _err(
                 f"Parent surface '{building_surface_name}' not found.",
-                {"missing_ref": "BuildingSurface:Detailed", "missing_name": building_surface_name},
+                {
+                    "missing_ref": "BuildingSurface:Detailed",
+                    "missing_name": building_surface_name,
+                },
             )
         # Interior-subsurface rule: when the parent base surface separates two
         # zones (Outside Boundary Condition = 'Surface'), a subsurface that is
@@ -291,10 +309,9 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
         # zone subsurfaces, so interior doors/windows MUST use a
         # Construction:AirBoundary (open-air) construction. Back-hop to
         # construction so it creates one.
-        if (
-            _parent_is_interzone(idf, building_surface_name)
-            and not _is_airboundary_construction(idf, construction_name)
-        ):
+        if _parent_is_interzone(
+            idf, building_surface_name
+        ) and not _is_airboundary_construction(idf, construction_name):
             return _err(
                 f"Parent surface '{building_surface_name}' is an interior "
                 f"(zone-separating) wall. {surface_type} '{name}' must use a "
@@ -302,7 +319,10 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
                 f"create_airboundary_construction) so it models an open "
                 f"passage; '{construction_name}' is a regular layered "
                 f"construction and would leave its boundary object blank.",
-                {"missing_ref": "Construction", "missing_name": "Construction:AirBoundary"},
+                {
+                    "missing_ref": "Construction",
+                    "missing_name": "Construction:AirBoundary",
+                },
             )
         try:
             # Auto-correct window winding to match the parent wall's outward
@@ -339,7 +359,10 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_fenestrations() -> str:
         """List all fenestration surfaces."""
-        items = [f.model_dump() for f in idf.all_of_type("FenestrationSurface:Detailed").values()]
+        items = [
+            f.model_dump()
+            for f in idf.all_of_type("FenestrationSurface:Detailed").values()
+        ]
         return _ok(f"Listed {len(items)} fenestrations.", items)
 
     @tool
@@ -385,7 +408,9 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
         obj = idf.get("FenestrationSurface:Detailed", name)
         if obj is None:
             return _err(f"Fenestration '{name}' not found.")
-        if construction_name is not None and not _construction_exists(idf, construction_name):
+        if construction_name is not None and not _construction_exists(
+            idf, construction_name
+        ):
             return _err(
                 f"Construction '{construction_name}' not found.",
                 {"missing_ref": "Construction", "missing_name": construction_name},
@@ -419,10 +444,15 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
                     "missing_name": effective_const,
                 },
             )
-        if building_surface_name is not None and not idf.has("BuildingSurface:Detailed", building_surface_name):
+        if building_surface_name is not None and not idf.has(
+            "BuildingSurface:Detailed", building_surface_name
+        ):
             return _err(
                 f"Parent surface '{building_surface_name}' not found.",
-                {"missing_ref": "BuildingSurface:Detailed", "missing_name": building_surface_name},
+                {
+                    "missing_ref": "BuildingSurface:Detailed",
+                    "missing_name": building_surface_name,
+                },
             )
         # Interior-subsurface rule (mirrors create_fenestration). Uses the
         # EFFECTIVE parent (new if provided, else current) and EFFECTIVE
@@ -443,7 +473,10 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
                 f"Construction:AirBoundary (create via "
                 f"create_airboundary_construction); '{effective_const_for_interzone}' "
                 f"is a regular layered construction.",
-                {"missing_ref": "Construction", "missing_name": "Construction:AirBoundary"},
+                {
+                    "missing_ref": "Construction",
+                    "missing_name": "Construction:AirBoundary",
+                },
             )
         try:
             # Resolve the effective parent (new if provided, else current) and
@@ -458,7 +491,10 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
                 if wall_obj is None:
                     return _err(
                         f"Parent surface '{parent_name}' not found.",
-                        {"missing_ref": "BuildingSurface:Detailed", "missing_name": parent_name},
+                        {
+                            "missing_ref": "BuildingSurface:Detailed",
+                            "missing_name": parent_name,
+                        },
                     )
                 aligned, align_err = _align_window_to_wall(vertices, wall_obj)
                 if align_err is not None:
@@ -491,8 +527,7 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
                     for axis in ("x", "y", "z"):
                         setattr(obj, f"vertex_4_{axis}_coordinate", None)
                 obj.number_of_vertices = len(vertices)
-            return _ok(f"Fenestration '{name}' updated successfully.",
-                       obj.model_dump())
+            return _ok(f"Fenestration '{name}' updated successfully.", obj.model_dump())
         except Exception as e:
             return _err(f"Error updating fenestration '{name}': {e}")
 
@@ -507,7 +542,9 @@ def make_fenestration_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_surfaces() -> str:
         """Read-only: list parent surfaces a fenestration can attach to."""
-        items = [s.model_dump() for s in idf.all_of_type("BuildingSurface:Detailed").values()]
+        items = [
+            s.model_dump() for s in idf.all_of_type("BuildingSurface:Detailed").values()
+        ]
         return _ok(f"Listed {len(items)} surfaces.", items)
 
     @tool

@@ -35,6 +35,7 @@ def clone_for_phase(state: AgentState) -> ConfigState:
     state.config_state.recover_idf_from_seed()
     return state.config_state.clone()
 
+
 MAX_SELF_REPAIR_ROUNDS: Final = 2
 """Max extra invokes per phase for cross-ref self-repair.
 
@@ -315,7 +316,7 @@ def detect_upstream_gap_from_state(
             idx = err.find(needle)
             if idx < 0:
                 continue
-            tail = err[idx + len(needle):]
+            tail = err[idx + len(needle) :]
             # tail looks like " 'F1_Office' which does not exist." — pull the
             # first single-quoted token, which is the missing reference name.
             name = _first_quoted(tail)
@@ -339,7 +340,7 @@ def _first_quoted(text: str) -> str | None:
     end = text.find("'", start + 1)
     if end < 0:
         return None
-    return text[start + 1:end]
+    return text[start + 1 : end]
 
 
 def invoke_with_self_repair(
@@ -420,16 +421,13 @@ def invoke_with_self_repair(
         # zone/construction when it could simply build every surface whose
         # upstream already exists. Without this, a transient missing ref can
         # leave the model with 0 surfaces entering simulation.
-        surface_empty = (
-            phase == "surface"
-            and not _idf_values(local_config.idf, "BuildingSurface:Detailed")
+        surface_empty = phase == "surface" and not _idf_values(
+            local_config.idf, "BuildingSurface:Detailed"
         )
 
         if not scoped and not gap and not surface_empty:
             if attempt > 0:
-                logger.info(
-                    "[{}] self-repair succeeded on round {}", phase, attempt
-                )
+                logger.info("[{}] self-repair succeeded on round {}", phase, attempt)
             return result
 
         if attempt == MAX_SELF_REPAIR_ROUNDS:
@@ -543,8 +541,7 @@ def _build_repair_feedback(
         "names an upstream resource (zone / schedule / material / "
         "construction / surface) that truly does not exist, report it in "
         "your final message and do NOT fabricate a replacement — upstream "
-        "phases own those objects."
-        + language_directive()
+        "phases own those objects." + language_directive()
     )
     return "\n".join(parts)
 
@@ -627,14 +624,20 @@ def maybe_backhop(
     if state.hop_count >= HOP_LIMIT:
         logger.warning(
             "[{}] back-hop to {} suppressed: hop_count={} reached HOP_LIMIT={}",
-            phase, gap["target"], state.hop_count, HOP_LIMIT,
+            phase,
+            gap["target"],
+            state.hop_count,
+            HOP_LIMIT,
         )
         return None
 
     specs_for_upstream = build_upstream_specs(gap, state)
     logger.info(
         "[{}] issuing back-hop Command -> {} (hop_count {}->{})",
-        phase, gap["target"], state.hop_count, state.hop_count + 1,
+        phase,
+        gap["target"],
+        state.hop_count,
+        state.hop_count + 1,
     )
     return Command(
         goto=gap["target"],

@@ -3,16 +3,17 @@
 Factory: make_analysis_tools(output_dir: Path) -> list[BaseTool]
 
 Six tools are produced:
-  get_simulation_status      – reads .end and .err
-  get_available_variables    – reads CSV header only
-  get_variable_statistics    – aggregates timeseries data (J → kWh auto)
-  get_peak_hours             – top-N max/min timesteps for one variable/key
-  get_comfort_statistics     – thermal-comfort hours per zone
-  get_energy_summary         – parses eplustbl.htm End Uses table
+  get_simulation_status      - reads .end and .err
+  get_available_variables    - reads CSV header only
+  get_variable_statistics    - aggregates timeseries data (J → kWh auto)
+  get_peak_hours             - top-N max/min timesteps for one variable/key
+  get_comfort_statistics     - thermal-comfort hours per zone
+  get_energy_summary         - parses eplustbl.htm End Uses table
 """
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import json
 import re
@@ -51,6 +52,7 @@ def _find_run_dir(output_dir: Path) -> Path | None:
     2. output_dir/energyplus_runs_* subdirs, newest first (legacy fallback)
     3. Returns None when nothing is found.
     """
+
     def _is_run_dir(d: Path) -> bool:
         return (d / "eplusout.csv").exists() or (d / "eplusout.end").exists()
 
@@ -68,9 +70,9 @@ def _load_csv(csv_path: Path) -> tuple[list[str], list[str], np.ndarray]:
 
     Returns
     -------
-    headers    : list[str]   – raw column names (column 0 is Date/Time)
-    date_times : list[str]   – N datetime strings from column 0
-    data       : np.ndarray  – shape (N, len(headers)-1) float64; NaN for blanks
+    headers    : list[str]   - raw column names (column 0 is Date/Time)
+    date_times : list[str]   - N datetime strings from column 0
+    data       : np.ndarray  - shape (N, len(headers)-1) float64; NaN for blanks
     """
     rows: list[list[str]] = []
     with csv_path.open(newline="", encoding="utf-8") as fh:
@@ -93,10 +95,8 @@ def _load_csv(csv_path: Path) -> tuple[list[str], list[str], np.ndarray]:
         for j in range(n_cols):
             idx = j + 1
             if idx < len(row) and row[idx].strip():
-                try:
+                with contextlib.suppress(ValueError):
                     data[i, j] = float(row[idx])
-                except ValueError:
-                    pass
     return headers, date_times, data
 
 
@@ -107,20 +107,26 @@ def _monthly_stats(values: np.ndarray, date_times: list[str]) -> list[dict]:
         prefix = f"{month:02d}/"
         idxs = [i for i, dt in enumerate(date_times) if dt.strip().startswith(prefix)]
         if not idxs:
-            months.append({"month": month, "mean": None, "min": None, "max": None, "total": None})
+            months.append(
+                {"month": month, "mean": None, "min": None, "max": None, "total": None}
+            )
             continue
         v = values[idxs]
         v_clean = v[~np.isnan(v)]
         if v_clean.size == 0:
-            months.append({"month": month, "mean": None, "min": None, "max": None, "total": None})
+            months.append(
+                {"month": month, "mean": None, "min": None, "max": None, "total": None}
+            )
         else:
-            months.append({
-                "month": month,
-                "mean": round(float(np.mean(v_clean)), 4),
-                "min": round(float(np.min(v_clean)), 4),
-                "max": round(float(np.max(v_clean)), 4),
-                "total": round(float(np.sum(v_clean)), 4),
-            })
+            months.append(
+                {
+                    "month": month,
+                    "mean": round(float(np.mean(v_clean)), 4),
+                    "min": round(float(np.min(v_clean)), 4),
+                    "max": round(float(np.max(v_clean)), 4),
+                    "total": round(float(np.sum(v_clean)), 4),
+                }
+            )
     return months
 
 
@@ -165,8 +171,8 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
           - warnings (int)
           - severe_errors (int)
           - elapsed_time (str | null)
-          - warning_messages (list[str])  – up to 10 samples
-          - severe_messages (list[str])   – up to 10 samples
+          - warning_messages (list[str]) - up to 10 samples
+          - severe_messages (list[str]) - up to 10 samples
         """
         run_dir = _find_run_dir(output_dir)
         if run_dir is None:
@@ -203,7 +209,9 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
         severe_messages: list[str] = []
 
         if err_path.exists():
-            for line in err_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            for line in err_path.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines():
                 stripped = line.strip()
                 if not stripped:
                     continue
@@ -211,11 +219,15 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
                 if re.search(r"\*\*\s*warning\s*\*\*", low):
                     if len(warning_messages) < 10:
                         warning_messages.append(stripped)
-                elif re.search(r"\*\*\s*(severe|fatal)\s*\*\*", low):
-                    if len(severe_messages) < 10:
-                        severe_messages.append(stripped)
+                elif (
+                    re.search(r"\*\*\s*(severe|fatal)\s*\*\*", low)
+                    and len(severe_messages) < 10
+                ):
+                    severe_messages.append(stripped)
 
-        status = "completed successfully" if completed else "did not complete successfully"
+        status = (
+            "completed successfully" if completed else "did not complete successfully"
+        )
         return _ok(
             f"Simulation {status}. {warnings_count} warning(s), {severe_count} severe error(s).",
             {
@@ -256,21 +268,28 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
             m = _COL_PATTERN.match(col.strip())
             if not m:
                 continue
-            key, var_name, unit, freq = m.group(1), m.group(2).strip(), m.group(3), m.group(4)
+            key, var_name, unit, freq = (
+                m.group(1),
+                m.group(2).strip(),
+                m.group(3),
+                m.group(4),
+            )
             if var_name not in variables:
                 variables[var_name] = {"unit": unit, "freq": freq, "keys": []}
             if key not in variables[var_name]["keys"]:
                 variables[var_name]["keys"].append(key)
 
         return _ok(
-            f"Found {len(variables)} distinct output variables across {len(headers)-1} columns.",
+            f"Found {len(variables)} distinct output variables across {len(headers) - 1} columns.",
             variables,
         )
 
     # -- Tool 3 ---------------------------------------------------------------
 
     @tool
-    def get_variable_statistics(variable_name: str, include_monthly: bool = True) -> str:
+    def get_variable_statistics(
+        variable_name: str, include_monthly: bool = True
+    ) -> str:
         """Compute annual and monthly statistics for an output variable.
 
         Loads the full CSV (results are cached for subsequent calls).
@@ -354,7 +373,7 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
         Args:
             variable_name: Variable name (e.g. "Zone Mean Air Temperature").
             key: Zone/surface/system key (e.g. "ZONE1" or "*" for facility-level).
-            n_top: Number of timesteps to return (1–50, default 10).
+            n_top: Number of timesteps to return (1-50, default 10).
             mode: "max" for highest values, "min" for lowest values.
         """
         if mode not in ("max", "min"):
@@ -413,7 +432,13 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
 
         return _ok(
             f"Top {len(peak_list)} {mode} values for '{variable_name}' (key='{key}', unit={display_unit}).",
-            {"variable_name": variable_name, "key": key, "unit": display_unit, "mode": mode, "peaks": peak_list},
+            {
+                "variable_name": variable_name,
+                "key": key,
+                "unit": display_unit,
+                "mode": mode,
+                "peaks": peak_list,
+            },
         )
 
     # -- Tool 5 ---------------------------------------------------------------
@@ -436,7 +461,7 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
             comfort_min_c: Lower comfort threshold in °C (default 20.0).
             comfort_max_c: Upper comfort threshold in °C (default 26.0).
         """
-        run_dir, headers, date_times, data = _get_csv()
+        run_dir, headers, _date_times, data = _get_csv()
         if run_dir is None:
             return _err("No simulation output found. Run the simulation first.")
 
@@ -464,24 +489,35 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
             valid = ~np.isnan(temps)
             n = int(np.sum(valid))
             if n == 0:
-                zone_results.append({"key": key, "total_hours": 0,
-                                     "comfort_hours": 0, "hot_hours": 0, "cold_hours": 0,
-                                     "comfort_pct": None, "hot_pct": None, "cold_pct": None})
+                zone_results.append(
+                    {
+                        "key": key,
+                        "total_hours": 0,
+                        "comfort_hours": 0,
+                        "hot_hours": 0,
+                        "cold_hours": 0,
+                        "comfort_pct": None,
+                        "hot_pct": None,
+                        "cold_pct": None,
+                    }
+                )
                 continue
             v = temps[valid]
             comfort = int(np.sum((v >= comfort_min_c) & (v <= comfort_max_c)))
             hot = int(np.sum(v > comfort_max_c))
             cold = int(np.sum(v < comfort_min_c))
-            zone_results.append({
-                "key": key,
-                "total_hours": n,
-                "comfort_hours": comfort,
-                "hot_hours": hot,
-                "cold_hours": cold,
-                "comfort_pct": round(comfort / n * 100, 2),
-                "hot_pct": round(hot / n * 100, 2),
-                "cold_pct": round(cold / n * 100, 2),
-            })
+            zone_results.append(
+                {
+                    "key": key,
+                    "total_hours": n,
+                    "comfort_hours": comfort,
+                    "hot_hours": hot,
+                    "cold_hours": cold,
+                    "comfort_pct": round(comfort / n * 100, 2),
+                    "hot_pct": round(hot / n * 100, 2),
+                    "cold_pct": round(cold / n * 100, 2),
+                }
+            )
             total_comfort += comfort
             total_hot += hot
             total_cold += cold
@@ -545,10 +581,8 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
                 re.IGNORECASE | re.DOTALL,
             )
             if eui_match:
-                try:
+                with contextlib.suppress(ValueError):
                     eui = round(float(eui_match.group(1)), 4)
-                except ValueError:
-                    pass
 
             table_match = re.search(
                 r"End Uses.*?(<table[^>]*>.*?</table>)",
@@ -562,18 +596,30 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
 
             if table_match:
                 table_html = table_match.group(1)
-                header_row = re.search(r"<tr[^>]*>(.*?)</tr>", table_html, re.IGNORECASE | re.DOTALL)
+                header_row = re.search(
+                    r"<tr[^>]*>(.*?)</tr>", table_html, re.IGNORECASE | re.DOTALL
+                )
                 col_names: list[str] = []
                 if header_row:
                     col_names = [
                         re.sub(r"<[^>]+>", "", c).strip()
-                        for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", header_row.group(1), re.IGNORECASE | re.DOTALL)
+                        for c in re.findall(
+                            r"<t[hd][^>]*>(.*?)</t[hd]>",
+                            header_row.group(1),
+                            re.IGNORECASE | re.DOTALL,
+                        )
                     ]
-                rows = re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, re.IGNORECASE | re.DOTALL)
+                rows = re.findall(
+                    r"<tr[^>]*>(.*?)</tr>", table_html, re.IGNORECASE | re.DOTALL
+                )
                 for row_html in rows[1:]:
                     cells = [
                         re.sub(r"<[^>]+>", "", c).strip()
-                        for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row_html, re.IGNORECASE | re.DOTALL)
+                        for c in re.findall(
+                            r"<t[hd][^>]*>(.*?)</t[hd]>",
+                            row_html,
+                            re.IGNORECASE | re.DOTALL,
+                        )
                     ]
                     if not cells or not cells[0]:
                         continue
@@ -617,6 +663,7 @@ def make_analysis_tools(output_dir: Path) -> list[BaseTool]:
 
         try:
             from src.results.parser import parse_tabular as _parse_tabular
+
             tabular = _parse_tabular(csv_path)
         except (ValueError, KeyError, OSError) as exc:
             return _err(f"Failed to parse eplustbl.csv: {type(exc).__name__}: {exc}")

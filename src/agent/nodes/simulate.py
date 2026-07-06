@@ -109,14 +109,17 @@ def simulate_node(
             # without surfacing them the LLM only sees "cannot run
             # simulation" and has no idea what to fix.
             if response.message:
-                error_block = (error_block + "\n" if error_block else "") + response.message
+                error_block = (
+                    error_block + "\n" if error_block else ""
+                ) + response.message
             if isinstance(response.data, dict):
                 preflight_errors = response.data.get("errors") or []
                 if preflight_errors:
                     bullet = "\n".join(f"  - {e}" for e in preflight_errors)
                     error_block = (
                         (error_block + "\n" if error_block else "")
-                        + "Geometry completeness errors:\n" + bullet
+                        + "Geometry completeness errors:\n"
+                        + bullet
                     )
         errors_for_phase = (
             [error_block] if error_block else ["EnergyPlus simulation failed."]

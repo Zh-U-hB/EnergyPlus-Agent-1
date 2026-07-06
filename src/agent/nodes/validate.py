@@ -13,7 +13,7 @@ from typing import Literal
 from langchain_core.messages import RemoveMessage
 from langgraph.types import Command, interrupt
 
-from src.agent.nodes._share import classify_errors, earliest_phase, PIPELINE_ORDER
+from src.agent.nodes._share import PIPELINE_ORDER, classify_errors, earliest_phase
 from src.agent.state import AgentState
 
 # Every node name validate can route to. Kept explicit (instead of just

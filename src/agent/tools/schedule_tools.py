@@ -1,9 +1,13 @@
 import json
 from typing import Any
 
+from idfpy.models.schedules import (
+    ScheduleCompact,
+    ScheduleCompactDataItem,
+    ScheduleTypeLimits,
+)
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.schedules import ScheduleCompact, ScheduleCompactDataItem, ScheduleTypeLimits
 from src.mcp.state import ConfigState
 from src.validator.data_model import ScheduleCompactSchema
 
@@ -39,13 +43,15 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if idf.has("ScheduleTypeLimits", name):
             return _err(f"ScheduleTypeLimits '{name}' already exists.")
         try:
-            idf.add(ScheduleTypeLimits(
-                name=name,
-                lower_limit_value=lower_limit_value,
-                upper_limit_value=upper_limit_value,
-                numeric_type=numeric_type,
-                unit_type=unit_type,
-            ))
+            idf.add(
+                ScheduleTypeLimits(
+                    name=name,
+                    lower_limit_value=lower_limit_value,
+                    upper_limit_value=upper_limit_value,
+                    numeric_type=numeric_type,
+                    unit_type=unit_type,
+                )
+            )
             return _ok(
                 f"ScheduleTypeLimits '{name}' created successfully.",
                 idf.get("ScheduleTypeLimits", name).model_dump(),
@@ -107,16 +113,20 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             return _err(f"Schedule:Compact '{name}' already exists.")
         try:
             # Validate and flatten the nested data structure
-            validated = ScheduleCompactSchema.model_validate({
-                "Name": name,
-                "Schedule Type Limits Name": schedule_type_limits_name,
-                "Data": data,
-            })
-            idf.add(ScheduleCompact(
-                name=validated.name,
-                schedule_type_limits_name=validated.schedule_type_limits_name,
-                data=[ScheduleCompactDataItem(field=v) for v in validated.data],
-            ))
+            validated = ScheduleCompactSchema.model_validate(
+                {
+                    "Name": name,
+                    "Schedule Type Limits Name": schedule_type_limits_name,
+                    "Data": data,
+                }
+            )
+            idf.add(
+                ScheduleCompact(
+                    name=validated.name,
+                    schedule_type_limits_name=validated.schedule_type_limits_name,
+                    data=[ScheduleCompactDataItem(field=v) for v in validated.data],
+                )
+            )
             obj = idf.get("Schedule:Compact", name)
             return _ok(
                 f"Schedule:Compact '{name}' created successfully.",
@@ -170,16 +180,17 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                 obj.schedule_type_limits_name = schedule_type_limits_name
             if data is not None:
                 # Validate the new data via the schema, then rebuild items
-                validated = ScheduleCompactSchema.model_validate({
-                    "Name": name,
-                    "Schedule Type Limits Name": obj.schedule_type_limits_name,
-                    "Data": data,
-                })
-                obj.data = [
-                    ScheduleCompactDataItem(field=v) for v in validated.data
-                ]
-            return _ok(f"Schedule:Compact '{name}' updated successfully.",
-                       obj.model_dump())
+                validated = ScheduleCompactSchema.model_validate(
+                    {
+                        "Name": name,
+                        "Schedule Type Limits Name": obj.schedule_type_limits_name,
+                        "Data": data,
+                    }
+                )
+                obj.data = [ScheduleCompactDataItem(field=v) for v in validated.data]
+            return _ok(
+                f"Schedule:Compact '{name}' updated successfully.", obj.model_dump()
+            )
         except Exception as e:
             return _err(f"Error updating Schedule:Compact '{name}': {e}")
 
@@ -228,5 +239,8 @@ def make_schedule_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             TABLE_SCHEDULE_TYPE_LIMITS,
             make_rag_tool,
         )
-        tools.append(make_rag_tool([TABLE_SCHEDULE_TYPE_LIMITS, TABLE_SCHEDULE_COMPACT], rag=rag))
+
+        tools.append(
+            make_rag_tool([TABLE_SCHEDULE_TYPE_LIMITS, TABLE_SCHEDULE_COMPACT], rag=rag)
+        )
     return tools

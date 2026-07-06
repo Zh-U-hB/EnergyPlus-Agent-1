@@ -11,7 +11,7 @@ from idfpy.models.outputs import (
     OutputVariable,
     OutputVariableDictionary,
 )
-from idfpy.models.simulation import Building, SimulationControl, Timestep, Version
+from idfpy.models.simulation import SimulationControl, Timestep, Version
 from idfpy.models.thermal_zones import GlobalGeometryRules
 
 from src.converters.base_converter import BaseConverter
@@ -134,10 +134,7 @@ class SettingsConverter(BaseConverter):
                 self._add_single_object_to_idf(idf_key, validated_model)
 
     def _add_single_object_to_idf(self, idf_key: str, validated_model) -> None:
-        if (
-            idf_key != "Output:Variable"
-            and len(self.idf.all_of_type(idf_key)) > 0
-        ):
+        if idf_key != "Output:Variable" and len(self.idf.all_of_type(idf_key)) > 0:
             self.logger.warning(
                 "Object of type '{}' already exists. Skipping addition.", idf_key
             )
@@ -150,21 +147,25 @@ class SettingsConverter(BaseConverter):
             self.logger.error("No apply function found for '{}'", idf_key)
 
     def _simulation_control_apply(self, model: SimulationControlSchema) -> None:
-        self.idf.add(SimulationControl(
-            do_zone_sizing_calculation=model.do_zone_sizing_calculation,
-            do_system_sizing_calculation=model.do_system_sizing_calculation,
-            do_plant_sizing_calculation=model.do_plant_sizing_calculation,
-            run_simulation_for_sizing_periods=model.run_simulation_for_sizing_periods,
-            run_simulation_for_weather_file_run_periods=model.run_simulation_for_weather_file_run_periods,
-            do_hvac_sizing_simulation_for_sizing_periods=model.do_hvac_sizing_simulation_for_sizing_periods,
-            maximum_number_of_hvac_sizing_simulation_passes=model.maximum_number_of_hvac_sizing_simulation_passes,
-        ))
+        self.idf.add(
+            SimulationControl(
+                do_zone_sizing_calculation=model.do_zone_sizing_calculation,
+                do_system_sizing_calculation=model.do_system_sizing_calculation,
+                do_plant_sizing_calculation=model.do_plant_sizing_calculation,
+                run_simulation_for_sizing_periods=model.run_simulation_for_sizing_periods,
+                run_simulation_for_weather_file_run_periods=model.run_simulation_for_weather_file_run_periods,
+                do_hvac_sizing_simulation_for_sizing_periods=model.do_hvac_sizing_simulation_for_sizing_periods,
+                maximum_number_of_hvac_sizing_simulation_passes=model.maximum_number_of_hvac_sizing_simulation_passes,
+            )
+        )
         self.logger.success("Added setting 'SimulationControl' to IDF.")
 
     def _timestep_apply(self, model: TimestepSchema) -> None:
-        self.idf.add(Timestep(
-            number_of_timesteps_per_hour=model.number_of_timesteps_per_hour,
-        ))
+        self.idf.add(
+            Timestep(
+                number_of_timesteps_per_hour=model.number_of_timesteps_per_hour,
+            )
+        )
         self.logger.success("Added setting 'Timestep' to IDF.")
 
     def _run_period_apply(self, model: RunPeriodSchema) -> None:
@@ -190,21 +191,25 @@ class SettingsConverter(BaseConverter):
         self.logger.success("Added setting 'RunPeriod' to IDF.")
 
     def _global_geometry_rules_apply(self, model: GlobalGeometryRulesSchema) -> None:
-        self.idf.add(GlobalGeometryRules(
-            starting_vertex_position=model.starting_vertex_position,
-            vertex_entry_direction=model.vertex_entry_direction,
-            coordinate_system=model.coordinate_system,
-        ))
+        self.idf.add(
+            GlobalGeometryRules(
+                starting_vertex_position=model.starting_vertex_position,
+                vertex_entry_direction=model.vertex_entry_direction,
+                coordinate_system=model.coordinate_system,
+            )
+        )
         self.logger.success("Added setting 'GlobalGeometryRules' to IDF.")
 
     def _site_location_apply(self, model: SiteLocationSchema) -> None:
-        self.idf.add(SiteLocation(
-            name=model.name,
-            latitude=model.latitude,
-            longitude=model.longitude,
-            time_zone=model.time_zone,
-            elevation=model.elevation,
-        ))
+        self.idf.add(
+            SiteLocation(
+                name=model.name,
+                latitude=model.latitude,
+                longitude=model.longitude,
+                time_zone=model.time_zone,
+                elevation=model.elevation,
+            )
+        )
         self.logger.success("Added setting 'Site:Location' to IDF.")
 
     def _output_variable_dictionary_apply(
@@ -214,33 +219,45 @@ class SettingsConverter(BaseConverter):
         self.logger.success("Added setting 'Output:VariableDictionary' to IDF.")
 
     def _output_diagnostics_apply(self, model: OutputDiagnosticsSchema) -> None:
-        self.idf.add(OutputDiagnostics(
-            diagnostics=[OutputDiagnosticsDiagnosticsItem(key=model.key_1)],
-        ))
+        self.idf.add(
+            OutputDiagnostics(
+                diagnostics=[OutputDiagnosticsDiagnosticsItem(key=model.key_1)],
+            )
+        )
         self.logger.success("Added setting 'Output:Diagnostics' to IDF.")
 
     def _output_table_summary_reports_apply(
         self, model: OutputTableSummaryReportsSchema
     ) -> None:
-        self.idf.add(OutputTableSummaryReports(
-            reports=[OutputTableSummaryReportsReportsItem(report_name=model.report_1_name)],
-        ))
+        self.idf.add(
+            OutputTableSummaryReports(
+                reports=[
+                    OutputTableSummaryReportsReportsItem(
+                        report_name=model.report_1_name
+                    )
+                ],
+            )
+        )
         self.logger.success("Added setting 'Output:Table:SummaryReports' to IDF.")
 
     def _output_control_table_style_apply(
         self, model: OutputControlTableStyleSchema
     ) -> None:
-        self.idf.add(OutputControlTableStyle(
-            column_separator=model.column_separator,
-            unit_conversion=model.unit_conversion,
-            format_numeric_values=None,  # EnergyPlus 25.x does not support this field
-        ))
+        self.idf.add(
+            OutputControlTableStyle(
+                column_separator=model.column_separator,
+                unit_conversion=model.unit_conversion,
+                format_numeric_values=None,  # EnergyPlus 25.x does not support this field
+            )
+        )
         self.logger.success("Added setting 'OutputControl:Table:Style' to IDF.")
 
     def _output_variable_apply(self, model: OutputVariableSchema) -> None:
-        self.idf.add(OutputVariable(
-            key_value=model.key_value,
-            variable_name=model.variable_name,
-            reporting_frequency=model.reporting_frequency,
-        ))
+        self.idf.add(
+            OutputVariable(
+                key_value=model.key_value,
+                variable_name=model.variable_name,
+                reporting_frequency=model.reporting_frequency,
+            )
+        )
         self.logger.success("Added setting 'Output:Variable' to IDF.")

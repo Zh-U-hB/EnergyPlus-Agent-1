@@ -218,9 +218,6 @@ __marimo__/
 
 output/
 
-# benchmark results (per-run logs, EnergyPlus outputs, top-view PNGs)
-agent_test/results/
-
 # qdrant_storage
 qdrant_storage/
 

@@ -1,8 +1,8 @@
 import json
 
+from idfpy.models.outputs import OutputVariable
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.outputs import OutputVariable
 from src.mcp.state import ConfigState
 
 
@@ -38,17 +38,20 @@ def make_output_tools(config: ConfigState) -> list[BaseTool]:
                 if (
                     getattr(existing, "key_value", None) == key_value
                     and getattr(existing, "variable_name", None) == variable_name
-                    and getattr(existing, "reporting_frequency", None) == reporting_frequency
+                    and getattr(existing, "reporting_frequency", None)
+                    == reporting_frequency
                 ):
                     return _ok(
                         f"Output:Variable '{variable_name}' is already registered.",
                         existing.model_dump(),
                     )
-            idf.add(OutputVariable(
-                key_value=key_value,
-                variable_name=variable_name,
-                reporting_frequency=reporting_frequency,
-            ))
+            idf.add(
+                OutputVariable(
+                    key_value=key_value,
+                    variable_name=variable_name,
+                    reporting_frequency=reporting_frequency,
+                )
+            )
             return _ok(f"Output:Variable '{variable_name}' added successfully.")
         except Exception as e:
             return _err(f"Error adding Output:Variable '{variable_name}': {e}")

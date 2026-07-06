@@ -2,7 +2,7 @@
 
 > **文档目的**：定义 agent graph 回跳（back-hop）机制的**最终实现规格**。本文档基于 `docs/BACKHOP_REDESIGN.md`（目标框架）和一系列 LangGraph 1.1.8 验证实验，锁定具体实现方案。实现工作以此为准。
 > **状态**：方案已验证，待实现。
-> **前置阅读**：`docs/BACKHOP_REDESIGN.md`（问题背景 + 目标框架）、`agent_test/DIAGNOSTICS.md`（case_01/case_02 诊断）。
+> **前置阅读**：`docs/BACKHOP_REDESIGN.md`（问题背景 + 目标框架）、`tests/agent/DIAGNOSTICS.md`（case_01/case_02 诊断）。
 
 ---
 

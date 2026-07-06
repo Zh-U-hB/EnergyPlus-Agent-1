@@ -126,9 +126,7 @@ class WorkflowTool:
             if geometry_errors:
                 return ToolResponse(
                     success=False,
-                    message=(
-                        "Geometry completeness errors, cannot run simulation."
-                    ),
+                    message=("Geometry completeness errors, cannot run simulation."),
                     data={"errors": geometry_errors},
                 )
 
@@ -146,7 +144,10 @@ class WorkflowTool:
                 return ToolResponse(
                     success=False,
                     message="EnergyPlus simulation failed.",
-                    data={"idf_path": str(temp_idf.absolute()), "output_dir": output_dir},
+                    data={
+                        "idf_path": str(temp_idf.absolute()),
+                        "output_dir": output_dir,
+                    },
                 )
 
             return ToolResponse(
@@ -156,7 +157,9 @@ class WorkflowTool:
             )
         except Exception as e:
             logger.exception("Error running simulation")
-            return ToolResponse(success=False, message=f"Error running simulation: {e!s}")
+            return ToolResponse(
+                success=False, message=f"Error running simulation: {e!s}"
+            )
 
     def get_summary(self) -> ToolResponse:
         return ToolResponse(

@@ -26,7 +26,7 @@ Status, elapsed time, number of warnings/severe errors (list up to 5 severe erro
 
 ### Thermal Environment
 Per zone: annual mean temperature, comfort hours (%), hot hours (%), cold hours (%).
-Comfort band: 20–26 °C unless the building description specifies otherwise.
+Comfort band: 20-26 °C unless the building description specifies otherwise.
 
 ### Energy Consumption
 Total electricity (kWh), total natural gas (kWh), EUI (MJ/m²).
@@ -38,7 +38,7 @@ Top 3 coldest hours (date, zone, temperature °C).
 Peak HVAC demand hour if available.
 
 ### Key Findings and Recommendations
-3–5 concise bullet points highlighting the most important results and actionable suggestions.
+3-5 concise bullet points highlighting the most important results and actionable suggestions.
 
 ## Rules
 - Use only data returned by the tools — do NOT invent or estimate values.
@@ -81,7 +81,9 @@ def analyze_node(state: AgentState, runtime: Runtime[SimContext]) -> AgentStateU
 
     result = agent.invoke(ReactState(messages=[HumanMessage(content=specs)]))
 
-    final = [m for m in result["messages"] if isinstance(m, AIMessage) and not m.tool_calls]
+    final = [
+        m for m in result["messages"] if isinstance(m, AIMessage) and not m.tool_calls
+    ]
     summary = final[-1].content if final else "Analysis complete."
 
     record_phase_trace("analyze", collector.export())

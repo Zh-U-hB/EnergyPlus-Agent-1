@@ -31,9 +31,9 @@ from __future__ import annotations
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from langchain_core.runnables import RunnableConfig
 
@@ -57,14 +57,24 @@ def _inventory(idf_path: Path) -> dict[str, int]:
     idf = cs.idf
     return {
         "zone": len(_idf_values(idf, "Zone")),
-        "mat": len(_idf_values(idf, "Material", "Material:NoMass",
-                               "Material:AirGap", "WindowMaterial:SimpleGlazingSystem")),
+        "mat": len(
+            _idf_values(
+                idf,
+                "Material",
+                "Material:NoMass",
+                "Material:AirGap",
+                "WindowMaterial:SimpleGlazingSystem",
+            )
+        ),
         "const": len(_idf_values(idf, "Construction")),
         "surf": len(_idf_values(idf, "BuildingSurface:Detailed")),
         "fen": len(_idf_values(idf, "FenestrationSurface:Detailed")),
         "sched": len(_idf_values(idf, "Schedule:Compact", "ScheduleCompact")),
-        "hvac": len(_idf_values(idf, "HVACTemplate:Thermostat",
-                                "HVACTemplate:Zone:IdealLoadsAirSystem")),
+        "hvac": len(
+            _idf_values(
+                idf, "HVACTemplate:Thermostat", "HVACTemplate:Zone:IdealLoadsAirSystem"
+            )
+        ),
         "ppl": len(_idf_values(idf, "People")),
         "light": len(_idf_values(idf, "Lights", "Light")),
     }
@@ -99,6 +109,7 @@ def _latest_idf(d: Path) -> Path | None:
 
 def _wait_for_idf(d: Path, timeout: float = 5.0) -> Path | None:
     import time as _t
+
     deadline = _t.time() + timeout
     while _t.time() < deadline:
         idf = _latest_idf(d)
@@ -127,9 +138,7 @@ def _run_turn(
         cs = ConfigState()
         cs.load_idf(seed_idf)
         cs.seed_idf_text = seed_idf.read_text(encoding="utf-8")
-        initial = AgentState(
-            user_input=prompt, config_state=cs, is_revision=True
-        )
+        initial = AgentState(user_input=prompt, config_state=cs, is_revision=True)
     else:
         initial = AgentState(user_input=prompt)
 
@@ -189,13 +198,19 @@ def scenario_a(graph) -> ScenarioResult:
             return _fail(name, t0, "no IDF produced")
         inv = _inventory(idf)
         checks = []
-        if inv["zone"] < 1: checks.append(f"zone={inv['zone']} expected >=1")
-        if inv["surf"] < 4: checks.append(f"surf={inv['surf']} expected >=4 (box)")
-        if inv["ppl"] < 1: checks.append(f"ppl={inv['ppl']} expected >=1")
-        if inv["light"] < 1: checks.append(f"light={inv['light']} expected >=1")
-        if inv["fen"] != 0: checks.append(f"fen={inv['fen']} expected 0 (no windows)")
+        if inv["zone"] < 1:
+            checks.append(f"zone={inv['zone']} expected >=1")
+        if inv["surf"] < 4:
+            checks.append(f"surf={inv['surf']} expected >=4 (box)")
+        if inv["ppl"] < 1:
+            checks.append(f"ppl={inv['ppl']} expected >=1")
+        if inv["light"] < 1:
+            checks.append(f"light={inv['light']} expected >=1")
+        if inv["fen"] != 0:
+            checks.append(f"fen={inv['fen']} expected 0 (no windows)")
         errs = _validate_refs(idf)
-        if errs: checks.append(f"cross-ref errors: {errs[:2]}")
+        if errs:
+            checks.append(f"cross-ref errors: {errs[:2]}")
         if checks:
             return _fail(name, t0, "; ".join(checks) + f" | inv={inv}")
         return _ok(name, t0, "single-zone warehouse built, refs clean", **inv)
@@ -270,9 +285,14 @@ def scenario_b(graph) -> ScenarioResult:
             checks.append(f"cross-ref errors: {errs[:2]}")
         if checks:
             return _fail(name, t0, "turn 3: " + "; ".join(checks))
-        return _ok(name, t0,
-                   "3-turn chain OK: build -> +windows -> modify loads, refs clean",
-                   t1=inv1, t2=inv2, t3=inv3)
+        return _ok(
+            name,
+            t0,
+            "3-turn chain OK: build -> +windows -> modify loads, refs clean",
+            t1=inv1,
+            t2=inv2,
+            t3=inv3,
+        )
     except Exception as e:
         return _fail(name, t0, f"exception: {e}\n{traceback.format_exc()[-400:]}")
 
@@ -327,9 +347,13 @@ def scenario_c(graph) -> ScenarioResult:
             checks.append(f"Office zones lost: {zone_names}")
         if checks:
             return _fail(name, t0, "; ".join(checks) + f" | t1={inv1} t2={inv2}")
-        return _ok(name, t0,
-                   f"delete revision OK: t1 zones={inv1['zone']} -> t2 zones={inv2['zone']}, refs clean",
-                   t1=inv1, t2=inv2)
+        return _ok(
+            name,
+            t0,
+            f"delete revision OK: t1 zones={inv1['zone']} -> t2 zones={inv2['zone']}, refs clean",
+            t1=inv1,
+            t2=inv2,
+        )
     except Exception as e:
         return _fail(name, t0, f"exception: {e}\n{traceback.format_exc()[-400:]}")
 
@@ -364,18 +388,27 @@ def scenario_d(graph) -> ScenarioResult:
             return _fail(name, t0, "turn 1 produced no IDF")
         inv1 = _inventory(idf1)
 
-        _run_turn(graph, D_TURN2_BAD, f"{name}_t2", out, seed_idf=idf1,
-                  approve_always=True)
+        _run_turn(
+            graph, D_TURN2_BAD, f"{name}_t2", out, seed_idf=idf1, approve_always=True
+        )
         idf2 = _wait_for_idf(out)
         if idf2:
             inv2 = _inventory(idf2)
             errs = _validate_refs(idf2)
             if inv2["zone"] < inv1["zone"]:
-                return _fail(name, t0,
-                             f"zones lost during rollback: {inv1['zone']}->{inv2['zone']}")
-            return _ok(name, t0,
-                       f"bad-ref turn handled gracefully: zones preserved, remaining errors={len(errs)}",
-                       t1=inv1, t2=inv2, remaining_errors=len(errs))
+                return _fail(
+                    name,
+                    t0,
+                    f"zones lost during rollback: {inv1['zone']}->{inv2['zone']}",
+                )
+            return _ok(
+                name,
+                t0,
+                f"bad-ref turn handled gracefully: zones preserved, remaining errors={len(errs)}",
+                t1=inv1,
+                t2=inv2,
+                remaining_errors=len(errs),
+            )
         return _ok(name, t0, "bad-ref turn handled (validate surfaced errors)", t1=inv1)
     except Exception as e:
         return _fail(name, t0, f"exception: {e}\n{traceback.format_exc()[-400:]}")
@@ -456,7 +489,9 @@ def scenario_f(graph) -> ScenarioResult:
             return _fail(name, t0, "turn 2 no IDF")
         zones_t2 = set(_names(idf2, "Zone"))
         if zones_t1 != zones_t2:
-            return _fail(name, t0, f"zone names changed t1->t2: {zones_t1} != {zones_t2}")
+            return _fail(
+                name, t0, f"zone names changed t1->t2: {zones_t1} != {zones_t2}"
+            )
 
         _run_turn(graph, F_TURN3, f"{name}_t3", out, seed_idf=idf2)
         idf3 = _wait_for_idf(out)
@@ -464,14 +499,19 @@ def scenario_f(graph) -> ScenarioResult:
             return _fail(name, t0, "turn 3 no IDF")
         zones_t3 = set(_names(idf3, "Zone"))
         if zones_t1 != zones_t3:
-            return _fail(name, t0, f"zone names changed across chain: {zones_t1} != {zones_t3}")
+            return _fail(
+                name, t0, f"zone names changed across chain: {zones_t1} != {zones_t3}"
+            )
         errs = _validate_refs(idf3)
         if errs:
             return _fail(name, t0, f"cross-ref errors after 3 turns: {errs[:3]}")
         inv3 = _inventory(idf3)
-        return _ok(name, t0,
-                   f"3-turn integrity OK: zone names stable ({sorted(zones_t1)}), refs clean",
-                   **inv3)
+        return _ok(
+            name,
+            t0,
+            f"3-turn integrity OK: zone names stable ({sorted(zones_t1)}), refs clean",
+            **inv3,
+        )
     except Exception as e:
         return _fail(name, t0, f"exception: {e}\n{traceback.format_exc()[-400:]}")
 
@@ -547,15 +587,20 @@ def scenario_g(graph) -> ScenarioResult:
             checks.append(f"light={inv['light']} expected >=4")
         # Distinct constructions for the different surface types
         if inv["const"] < 4:
-            checks.append(f"const={inv['const']} expected >=4 (ext wall/roof/floor/int)")
+            checks.append(
+                f"const={inv['const']} expected >=4 (ext wall/roof/floor/int)"
+            )
         if errs:
             checks.append(f"cross-ref errors: {errs[:3]}")
         if checks:
             return _fail(name, t0, "; ".join(checks) + f" | inv={inv}")
         zone_names = _names(idf, "Zone")
-        return _ok(name, t0,
-                   f"complex 4-zone office built: zones={zone_names}, refs clean",
-                   **inv)
+        return _ok(
+            name,
+            t0,
+            f"complex 4-zone office built: zones={zone_names}, refs clean",
+            **inv,
+        )
     except Exception as e:
         return _fail(name, t0, f"exception: {e}\n{traceback.format_exc()[-400:]}")
 
@@ -607,7 +652,9 @@ def scenario_h(graph) -> ScenarioResult:
         zones_t2 = _names(idf2, "Zone")
         checks = []
         if inv2["zone"] <= inv1["zone"]:
-            checks.append(f"zone count did not increase: {inv1['zone']}->{inv2['zone']}")
+            checks.append(
+                f"zone count did not increase: {inv1['zone']}->{inv2['zone']}"
+            )
         if not any("Storage" in z for z in zones_t2):
             checks.append(f"Storage_Second zone not found: {zones_t2}")
         errs = _validate_refs(idf2)
@@ -626,7 +673,9 @@ def scenario_h(graph) -> ScenarioResult:
         if inv3["zone"] != inv2["zone"]:
             checks.append(f"zone changed t2->t3: {inv2['zone']}->{inv3['zone']}")
         if inv3["fen"] <= inv2["fen"]:
-            checks.append(f"fenestration did not increase: {inv2['fen']}->{inv3['fen']}")
+            checks.append(
+                f"fenestration did not increase: {inv2['fen']}->{inv3['fen']}"
+            )
         errs = _validate_refs(idf3)
         if errs:
             checks.append(f"cross-ref errors after fen add: {errs[:3]}")
@@ -648,17 +697,22 @@ def scenario_h(graph) -> ScenarioResult:
             checks.append(f"dangling refs after delete: {errs[:3]}")
         # The original 4 zones must survive
         original_survived = all(
-            any(orig in z for z in zones_t4)
-            for orig in ["Reception", "Office"]
+            any(orig in z for z in zones_t4) for orig in ["Reception", "Office"]
         )
         if not original_survived:
             checks.append(f"original zones lost: {zones_t4}")
         if checks:
             return _fail(name, t0, "turn 4: " + "; ".join(checks) + f" | inv={inv4}")
 
-        return _ok(name, t0,
-                   f"4-turn deep chain OK: build(4z) -> +zone(5z) -> +fen -> -zone(4z), refs clean throughout",
-                   t1=inv1, t2=inv2, t3=inv3, t4=inv4)
+        return _ok(
+            name,
+            t0,
+            "4-turn deep chain OK: build(4z) -> +zone(5z) -> +fen -> -zone(4z), refs clean throughout",
+            t1=inv1,
+            t2=inv2,
+            t3=inv3,
+            t4=inv4,
+        )
     except Exception as e:
         return _fail(name, t0, f"exception: {e}\n{traceback.format_exc()[-400:]}")
 
@@ -680,11 +734,13 @@ SCENARIOS: list[tuple[str, Callable]] = [
 def main() -> int:
     only = set(sys.argv[1:])  # scenario labels to run; empty = all
     ROOT.mkdir(parents=True, exist_ok=True)
-    print(f"\n{'='*72}\nDEEP MULTI-SCENARIO TEST SUITE (unified self-repair)\n{'='*72}")
+    print(
+        f"\n{'=' * 72}\nDEEP MULTI-SCENARIO TEST SUITE (unified self-repair)\n{'=' * 72}"
+    )
     print(f"Output root: {ROOT}\n")
 
     graph = build_graph()
-    to_run = [(l, fn) for l, fn in SCENARIOS if not only or l in only]
+    to_run = [(label, fn) for label, fn in SCENARIOS if not only or label in only]
     results: list[ScenarioResult] = []
     for label, fn in to_run:
         doc_first = (fn.__doc__ or "").strip().splitlines()[0]
@@ -696,7 +752,7 @@ def main() -> int:
         if r.detail:
             print(f"       {r.detail[:200]}")
 
-    print(f"\n{'='*72}\nSUMMARY\n{'='*72}")
+    print(f"\n{'=' * 72}\nSUMMARY\n{'=' * 72}")
     passed = sum(1 for r in results if r.passed)
     for r in results:
         status = "PASS" if r.passed else "FAIL"

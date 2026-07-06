@@ -142,7 +142,9 @@ def intake_node(state: AgentState) -> AgentStateUpdate:
     which intake_node writes into the shared config_state. Phase agents
     read their own `*_specs` strings from intake_output.
     """
-    llm = create_llm().with_structured_output(IntakeOutput, method="function_calling", include_raw=True)
+    llm = create_llm().with_structured_output(
+        IntakeOutput, method="function_calling", include_raw=True
+    )
 
     text = state.user_input
     if state.validation_errors:

@@ -1,8 +1,8 @@
 import json
 
+from idfpy.models.thermal_zones import Zone
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.thermal_zones import Zone
 from src.mcp.state import ConfigState
 
 
@@ -40,14 +40,16 @@ def make_zone_tools(config: ConfigState) -> list[BaseTool]:
         if idf.has("Zone", name):
             return _err(f"Zone '{name}' already exists.")
         try:
-            idf.add(Zone(
-                name=name,
-                x_origin=x_origin,
-                y_origin=y_origin,
-                z_origin=z_origin,
-                direction_of_relative_north=direction_of_relative_north,
-                multiplier=multiplier,
-            ))
+            idf.add(
+                Zone(
+                    name=name,
+                    x_origin=x_origin,
+                    y_origin=y_origin,
+                    z_origin=z_origin,
+                    direction_of_relative_north=direction_of_relative_north,
+                    multiplier=multiplier,
+                )
+            )
             return _ok(
                 f"Zone '{name}' created successfully.",
                 idf.get("Zone", name).model_dump(),

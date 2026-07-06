@@ -44,7 +44,11 @@ class MaterialTool(BaseTool):
         # Normalize so MCP/LLM callers can pass "standard", "no_mass",
         # "No Mass", "air-gap", etc. without hitting the "Unknown type" path.
         normalized = (
-            str(material_type).replace(" ", "").replace("-", "").replace("_", "").lower()
+            str(material_type)
+            .replace(" ", "")
+            .replace("-", "")
+            .replace("_", "")
+            .lower()
         )
         if normalized == "standard":
             return Material(**payload)
@@ -74,6 +78,8 @@ class MaterialTool(BaseTool):
             "layer_10",
         ]
         for construction in self.state.idf.all_of_type("Construction").values():
-            if any(getattr(construction, field, None) == name for field in layer_fields):
+            if any(
+                getattr(construction, field, None) == name for field in layer_fields
+            ):
                 refs.append(f"Construction:{construction.name}")
         return refs

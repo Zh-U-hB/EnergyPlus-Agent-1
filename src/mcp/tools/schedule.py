@@ -88,7 +88,9 @@ class ScheduleCompactTool(BaseTool):
 
     def _check_references(self, name: str) -> list[str]:
         refs = []
-        for thermostat in self.state.idf.all_of_type("HVACTemplate:Thermostat").values():
+        for thermostat in self.state.idf.all_of_type(
+            "HVACTemplate:Thermostat"
+        ).values():
             if thermostat.heating_setpoint_schedule_name == name:
                 refs.append(f"Thermostat:{thermostat.name}")
             if thermostat.cooling_setpoint_schedule_name == name:

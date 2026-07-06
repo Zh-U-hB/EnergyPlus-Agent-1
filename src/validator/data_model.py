@@ -24,7 +24,6 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-
 class BaseSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,  # 支持从对象创建模型
@@ -54,9 +53,7 @@ class BaseSchema(BaseModel):
         return IDF()
 
     @staticmethod
-    def validate_choice_field(
-        value: str, valid_choices: list, field_name: str
-    ) -> str:
+    def validate_choice_field(value: str, valid_choices: list, field_name: str) -> str:
         choice_mapping = {choice.lower(): choice for choice in valid_choices}  # type: ignore
         value_lower = value.lower()
 
@@ -373,15 +370,23 @@ class SurfaceSchema(BaseSchema):
     @field_validator("outside_boundary_condition")
     def validate_outside_boundary_condition(cls, v):
         valid_conditions = [
-            "Adiabatic", "Foundation", "Ground",
+            "Adiabatic",
+            "Foundation",
+            "Ground",
             "GroundBasementPreprocessorAverageFloor",
             "GroundBasementPreprocessorAverageWall",
             "GroundBasementPreprocessorLowerWall",
             "GroundBasementPreprocessorUpperWall",
-            "GroundFCfactorMethod", "GroundSlabPreprocessorAverage",
-            "GroundSlabPreprocessorCore", "GroundSlabPreprocessorPerimeter",
-            "OtherSideCoefficients", "OtherSideConditionsModel",
-            "Outdoors", "Space", "Surface", "Zone",
+            "GroundFCfactorMethod",
+            "GroundSlabPreprocessorAverage",
+            "GroundSlabPreprocessorCore",
+            "GroundSlabPreprocessorPerimeter",
+            "OtherSideCoefficients",
+            "OtherSideConditionsModel",
+            "Outdoors",
+            "Space",
+            "Surface",
+            "Zone",
         ]
         if v not in valid_conditions:
             raise ValueError(
@@ -627,7 +632,15 @@ class RunPeriodSchema(BaseSchema):
 
     @field_validator("day_of_week_for_start_day")
     def validate_day_of_week(cls, v):
-        valid_days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        valid_days = [
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+        ]
         if v is not None and v not in valid_days:
             raise ValueError(f"Day of Week for Start Day must be one of {valid_days}.")
         return v
@@ -647,7 +660,12 @@ class GlobalGeometryRulesSchema(BaseSchema):
 
     @field_validator("starting_vertex_position")
     def validate_starting_vertex_position(cls, v):
-        valid_positions = ["LowerLeftCorner", "LowerRightCorner", "UpperLeftCorner", "UpperRightCorner"]
+        valid_positions = [
+            "LowerLeftCorner",
+            "LowerRightCorner",
+            "UpperLeftCorner",
+            "UpperRightCorner",
+        ]
         if v not in valid_positions:
             raise ValueError(
                 f"Starting Vertex Position must be one of {valid_positions}."
@@ -686,8 +704,11 @@ class OutputDiagnosticsSchema(BaseSchema):
     @field_validator("key_1")
     def validate_key_1(cls, v):
         valid_key_1 = [
-            "DisplayAdvancedReportVariables", "DisplayAllWarnings",
-            "DisplayExtraWarnings", "DisplayUnusedObjects", "DisplayUnusedSchedules",
+            "DisplayAdvancedReportVariables",
+            "DisplayAllWarnings",
+            "DisplayExtraWarnings",
+            "DisplayUnusedObjects",
+            "DisplayUnusedSchedules",
         ]
         return cls.validate_choice_field(v, valid_key_1, "Key 1")
 
@@ -701,18 +722,37 @@ class OutputTableSummaryReportsSchema(BaseSchema):
     @field_validator("report_1_name")
     def validate_report_1_name(cls, v):
         valid_report_names = [
-            "AdaptiveComfortSummary", "AirLoopComponentLoadSummary", "AllMonthly",
-            "AllSummary", "AllSummaryAndMonthly", "AllSummaryAndSizingPeriod",
-            "AllSummaryMonthlyAndSizingPeriod", "AnnualBuildingUtilityPerformanceSummary",
-            "ClimaticDataSummary", "ComponentCostEconomicsSummary",
-            "ComponentSizingSummary", "CoilSizingDetails", "DemandEndUseComponentsSummary",
-            "EnergyMeters", "EnvelopeSummary", "EquipmentSummary",
-            "FacilityComponentLoadSummary", "HVACSizingSummary",
-            "InitializationSummary", "InputVerificationandResultsSummary",
-            "LEEDSummary", "LifeCycleCostReport", "LightingSummary",
-            "ObjectCountSummary", "OutdoorAirSummary", "SensibleHeatGainSummary",
-            "ShadingSummary", "SourceEnergyEndUseComponentsSummary", "SystemSummary",
-            "TariffReport", "ZoneComponentLoadSummary",
+            "AdaptiveComfortSummary",
+            "AirLoopComponentLoadSummary",
+            "AllMonthly",
+            "AllSummary",
+            "AllSummaryAndMonthly",
+            "AllSummaryAndSizingPeriod",
+            "AllSummaryMonthlyAndSizingPeriod",
+            "AnnualBuildingUtilityPerformanceSummary",
+            "ClimaticDataSummary",
+            "ComponentCostEconomicsSummary",
+            "ComponentSizingSummary",
+            "CoilSizingDetails",
+            "DemandEndUseComponentsSummary",
+            "EnergyMeters",
+            "EnvelopeSummary",
+            "EquipmentSummary",
+            "FacilityComponentLoadSummary",
+            "HVACSizingSummary",
+            "InitializationSummary",
+            "InputVerificationandResultsSummary",
+            "LEEDSummary",
+            "LifeCycleCostReport",
+            "LightingSummary",
+            "ObjectCountSummary",
+            "OutdoorAirSummary",
+            "SensibleHeatGainSummary",
+            "ShadingSummary",
+            "SourceEnergyEndUseComponentsSummary",
+            "SystemSummary",
+            "TariffReport",
+            "ZoneComponentLoadSummary",
         ]
         return cls.validate_choice_field(v, valid_report_names, "Report 1 Name")
 
@@ -727,16 +767,30 @@ class OutputControlTableStyleSchema(BaseSchema):
     @field_validator("column_separator")
     def validate_column_separator(cls, v):
         valid_separators = [
-            "", "All", "Comma", "CommaAndHTML", "CommaAndXML",
-            "Fixed", "HTML", "Tab", "TabAndHTML", "XML", "XMLandHTML",
+            "",
+            "All",
+            "Comma",
+            "CommaAndHTML",
+            "CommaAndXML",
+            "Fixed",
+            "HTML",
+            "Tab",
+            "TabAndHTML",
+            "XML",
+            "XMLandHTML",
         ]
         return cls.validate_choice_field(v, valid_separators, "Column Separator")
 
     @field_validator("unit_conversion")
     def validate_unit_conversion(cls, v):
         valid_conversions = [
-            "", "InchPound", "InchPoundExceptElectricity",
-            "JtoGJ", "JtoKWH", "JtoMJ", "None",
+            "",
+            "InchPound",
+            "InchPoundExceptElectricity",
+            "JtoGJ",
+            "JtoKWH",
+            "JtoMJ",
+            "None",
         ]
         return cls.validate_choice_field(v, valid_conversions, "Unit Conversion")
 
@@ -752,8 +806,15 @@ class OutputVariableSchema(BaseSchema):
     @field_validator("reporting_frequency")
     def validate_reporting_frequency(cls, v):
         valid_frequencies = [
-            "", "Annual", "Daily", "Detailed", "Environment",
-            "Hourly", "Monthly", "RunPeriod", "Timestep",
+            "",
+            "Annual",
+            "Daily",
+            "Detailed",
+            "Environment",
+            "Hourly",
+            "Monthly",
+            "RunPeriod",
+            "Timestep",
         ]
         return cls.validate_choice_field(v, valid_frequencies, "Reporting Frequency")
 
@@ -933,7 +994,13 @@ class FenestrationSurfaceSchema(BaseSchema):
 
     @field_validator("surface_type")
     def validate_surface_type(cls, v):
-        valid_types = ["Door", "GlassDoor", "TubularDaylightDiffuser", "TubularDaylightDome", "Window"]
+        valid_types = [
+            "Door",
+            "GlassDoor",
+            "TubularDaylightDiffuser",
+            "TubularDaylightDome",
+            "Window",
+        ]
         if v not in valid_types:
             raise ValueError(f"Surface Type must be one of {valid_types}.")
         return v
@@ -1249,9 +1316,7 @@ class ScheduleCompactSchema(BaseSchema):
             try:
                 parsed_date = parse(date)
             except Exception as e:
-                raise ValueError(
-                    f"Invalid schedule Through date '{date}': {e}"
-                ) from e
+                raise ValueError(f"Invalid schedule Through date '{date}': {e}") from e
             date_str = parsed_date.strftime("%m/%d")
             # Day-of-year for monotonicity (non-leap reference year; we only
             # compare order, so a fixed year is fine). EnergyPlus requires
@@ -1301,10 +1366,18 @@ class ScheduleCompactSchema(BaseSchema):
         # duplicate. Map each group to the concrete types it owns.
         GROUP_MEMBERS = {
             "alldays": {
-                "monday", "tuesday", "wednesday", "thursday", "friday",
-                "saturday", "sunday", "holidays",
-                "summerdesignday", "winterdesignday",
-                "customday1", "customday2",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+                "holidays",
+                "summerdesignday",
+                "winterdesignday",
+                "customday1",
+                "customday2",
             },
             "weekdays": {"monday", "tuesday", "wednesday", "thursday", "friday"},
             "weekends": {"saturday", "sunday", "holidays"},
@@ -1720,8 +1793,10 @@ class PeopleSchema(BaseSchema):
     @field_validator("clothing_insulation_calculation_method")
     def validate_clothing_insulation_calculation_method(cls, v):
         valid_choices = [
-            "", "CalculationMethodSchedule",
-            "ClothingInsulationSchedule", "DynamicClothingModelASHRAE55",
+            "",
+            "CalculationMethodSchedule",
+            "ClothingInsulationSchedule",
+            "DynamicClothingModelASHRAE55",
         ]
         return cls.validate_choice_field(
             v,
@@ -1742,8 +1817,13 @@ class PeopleSchema(BaseSchema):
         if v in (None, ""):
             return v
         valid_choices = [
-            "AdaptiveASH55", "AdaptiveCEN15251", "AnkleDraftASH55",
-            "CoolingEffectASH55", "Fanger", "KSU", "Pierce",
+            "AdaptiveASH55",
+            "AdaptiveCEN15251",
+            "AnkleDraftASH55",
+            "CoolingEffectASH55",
+            "Fanger",
+            "KSU",
+            "Pierce",
         ]
         return cls.validate_choice_field(
             v,

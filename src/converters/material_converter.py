@@ -113,37 +113,45 @@ class MaterialConverter(BaseConverter):
         return MaterialSchema.model_validate(data)
 
     def _add_standard_material_to_idf(self, material: StandardMaterialSchema) -> None:
-        self.idf.add(Material(
-            name=material.name,
-            roughness=material.roughness,
-            thickness=material.thickness,
-            conductivity=material.conductivity,
-            density=material.density,
-            specific_heat=material.specific_heat,
-        ))
+        self.idf.add(
+            Material(
+                name=material.name,
+                roughness=material.roughness,
+                thickness=material.thickness,
+                conductivity=material.conductivity,
+                density=material.density,
+                specific_heat=material.specific_heat,
+            )
+        )
 
     def _add_no_mass_material_to_idf(self, material: NoMassMaterialSchema) -> None:
-        self.idf.add(MaterialNoMass(
-            name=material.name,
-            roughness=material.roughness,
-            thermal_resistance=material.thermal_resistance,
-        ))
+        self.idf.add(
+            MaterialNoMass(
+                name=material.name,
+                roughness=material.roughness,
+                thermal_resistance=material.thermal_resistance,
+            )
+        )
 
     def _add_air_gap_material_to_idf(self, material: AirGapMaterialSchema) -> None:
-        self.idf.add(MaterialAirGap(
-            name=material.name,
-            thermal_resistance=material.thermal_resistance,
-        ))
+        self.idf.add(
+            MaterialAirGap(
+                name=material.name,
+                thermal_resistance=material.thermal_resistance,
+            )
+        )
 
     def _add_glazing_material_to_idf(self, material: GlazingMaterialSchema) -> None:
-        self.idf.add(WindowMaterialSimpleGlazingSystem(
-            name=material.name,
-            u_factor=material.u_factor,
-            solar_heat_gain_coefficient=material.solar_heat_gain_coefficient,
-            # Preserve an explicit 0.0; `or None` would drop it.
-            visible_transmittance=(
-                material.visible_transmittance
-                if material.visible_transmittance is not None
-                else None
-            ),
-        ))
+        self.idf.add(
+            WindowMaterialSimpleGlazingSystem(
+                name=material.name,
+                u_factor=material.u_factor,
+                solar_heat_gain_coefficient=material.solar_heat_gain_coefficient,
+                # Preserve an explicit 0.0; `or None` would drop it.
+                visible_transmittance=(
+                    material.visible_transmittance
+                    if material.visible_transmittance is not None
+                    else None
+                ),
+            )
+        )

@@ -4,13 +4,16 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command
 
 from src.agent.llm import create_llm
-from src.agent.nodes._share import clone_for_phase, invoke_with_self_repair, maybe_backhop
+from src.agent.nodes._share import (
+    clone_for_phase,
+    invoke_with_self_repair,
+    maybe_backhop,
+)
 from src.agent.react import build_react_agent
 from src.agent.state import AgentState, AgentStateUpdate
 from src.agent.tools import make_construction_tools
 from src.agent.tools.rag_tools import _get_rag
 from src.agent.trace import TraceCollector, record_phase_trace
-
 
 # Legal back-hop target for construction: a missing material layer hops
 # to the material phase. Declared on the return type so LangGraph accepts
@@ -80,7 +83,9 @@ Reference database:
 """
 
 
-def construction_agent(state: AgentState) -> Command[_ConstructionRoute] | AgentStateUpdate:
+def construction_agent(
+    state: AgentState,
+) -> Command[_ConstructionRoute] | AgentStateUpdate:
     local = clone_for_phase(state)
     tools = make_construction_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="construction")

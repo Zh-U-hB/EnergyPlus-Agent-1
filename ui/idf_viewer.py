@@ -38,16 +38,16 @@ from src.results.idf_geometry import (
 # Tunables
 # ---------------------------------------------------------------------------
 
-_WALL_EXTRUDE = 0.04          # wall solid thickness along its outward normal (m)
-_WINDOW_EXTRUDE = 0.12        # window cutter thickness - must exceed wall (m)
-_BOOLEAN_TIMEOUT_ATTEMPTS = 1 # try boolean once per wall; fallback on any failure
+_WALL_EXTRUDE = 0.04  # wall solid thickness along its outward normal (m)
+_WINDOW_EXTRUDE = 0.12  # window cutter thickness - must exceed wall (m)
+_BOOLEAN_TIMEOUT_ATTEMPTS = 1  # try boolean once per wall; fallback on any failure
 
 # Base colours per surface class.  Window colour is applied to the glazing
 # patch; wall colour is applied to the (possibly hole-punched) wall solid.
 _TYPE_COLORS: dict[str, str] = {
-    "wall": "#b0b6bd",     # light grey
-    "floor": "#a0784f",    # warm brown
-    "roof": "#5a6168",     # dark grey
+    "wall": "#b0b6bd",  # light grey
+    "floor": "#a0784f",  # warm brown
+    "roof": "#5a6168",  # dark grey
     "ceiling": "#9fb4c4",  # pale blue
 }
 _WINDOW_COLOR = "rgba(80, 160, 230, 0.45)"  # semi-transparent glazing blue
@@ -70,7 +70,7 @@ def _probe_boolean() -> bool:
     if _boolean_available is not None:
         return _boolean_available
     try:
-        from trimesh.boolean import difference  # noqa: F401
+        from trimesh.boolean import difference
 
         a = trimesh.creation.box([2.0, 2.0, 0.1])
         b = trimesh.creation.box([0.5, 0.5, 0.3])
@@ -216,9 +216,7 @@ def _build_wall_mesh(
     for win in windows:
         if len(win.vertices) < 3:
             continue
-        snapped = [
-            _project_to_plane(v, plane_point, normal) for v in win.vertices
-        ]
+        snapped = [_project_to_plane(v, plane_point, normal) for v in win.vertices]
         cutter = _make_prism(snapped, normal, _WINDOW_EXTRUDE)
         if cutter is not None:
             cutters.append(cutter)
@@ -245,14 +243,14 @@ def _build_wall_mesh(
 def _empty_figure(message: str) -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
-        scene=dict(
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            zaxis=dict(visible=False),
-            aspectmode="data",
-        ),
+        scene={
+            "xaxis": {"visible": False},
+            "yaxis": {"visible": False},
+            "zaxis": {"visible": False},
+            "aspectmode": "data",
+        },
         title=message,
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
     return fig
 
@@ -355,8 +353,7 @@ def build_idf_3d_model(idf_path: Path) -> go.Figure:
         # sitting inside the aperture rather than on one face.
         nudge = np.asarray(normal) * (_WALL_EXTRUDE * 0.5)
         nudged = [
-            (v[0] + nudge[0], v[1] + nudge[1], v[2] + nudge[2])
-            for v in fen.vertices
+            (v[0] + nudge[0], v[1] + nudge[1], v[2] + nudge[2]) for v in fen.vertices
         ]
         panel = _make_prism(nudged, normal, 0.005)
         if panel is not None:
@@ -382,12 +379,10 @@ def build_idf_3d_model(idf_path: Path) -> go.Figure:
                 opacity=1.0,
                 name=name,
                 showlegend=False,
-                hovertemplate=(
-                    "<b>%{customdata}</b><extra></extra>"
-                ),
+                hovertemplate=("<b>%{customdata}</b><extra></extra>"),
                 customdata=np.array(bucket.names).reshape(-1, 1),
                 flatshading=True,
-                lighting=dict(ambient=0.75, diffuse=0.8, specular=0.1),
+                lighting={"ambient": 0.75, "diffuse": 0.8, "specular": 0.1},
             )
         )
 
@@ -421,25 +416,27 @@ def build_idf_3d_model(idf_path: Path) -> go.Figure:
         f"{n_zones} zones | {n_surfaces} surfaces | {len(fenestrations)} openings",
     ]
     if not boolean_active:
-        title_parts.append("(boolean backend unavailable - windows shown as glazing only)")
+        title_parts.append(
+            "(boolean backend unavailable - windows shown as glazing only)"
+        )
     elif fallback_count:
         title_parts.append(f"({fallback_count} wall(s) fell back to un-cut)")
     elif cut_count:
         title_parts.append(f"({cut_count} wall(s) with real openings)")
 
     fig.update_layout(
-        scene=dict(
-            xaxis=dict(title="X (m)", backgroundcolor="rgb(245,245,250)"),
-            yaxis=dict(title="Y (m)", backgroundcolor="rgb(245,245,250)"),
-            zaxis=dict(title="Z (m)", backgroundcolor="rgb(245,245,250)"),
-            aspectmode="data",
-            camera=dict(
-                eye=dict(x=1.6, y=-1.6, z=1.1),
-                up=dict(x=0, y=0, z=1),
-            ),
-        ),
+        scene={
+            "xaxis": {"title": "X (m)", "backgroundcolor": "rgb(245,245,250)"},
+            "yaxis": {"title": "Y (m)", "backgroundcolor": "rgb(245,245,250)"},
+            "zaxis": {"title": "Z (m)", "backgroundcolor": "rgb(245,245,250)"},
+            "aspectmode": "data",
+            "camera": {
+                "eye": {"x": 1.6, "y": -1.6, "z": 1.1},
+                "up": {"x": 0, "y": 0, "z": 1},
+            },
+        },
         title="<br>".join(title_parts),
-        margin=dict(l=0, r=0, t=90, b=0),
+        margin={"l": 0, "r": 0, "t": 90, "b": 0},
         height=680,
     )
     return fig

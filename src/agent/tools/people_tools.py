@@ -1,8 +1,8 @@
 import json
 
+from idfpy.models.internal_gains import People
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.internal_gains import People
 from src.mcp.state import ConfigState
 
 
@@ -51,28 +51,46 @@ def make_people_tools(config: ConfigState) -> list[BaseTool]:
                 f"Zone '{zone_name}' not found.",
                 {"missing_ref": "Zone", "missing_name": zone_name},
             )
-        if number_of_people_schedule_name and not idf.has("Schedule:Compact", number_of_people_schedule_name):
+        if number_of_people_schedule_name and not idf.has(
+            "Schedule:Compact", number_of_people_schedule_name
+        ):
             return _err(
                 f"Schedule:Compact '{number_of_people_schedule_name}' not found.",
-                {"missing_ref": "Schedule:Compact", "missing_name": number_of_people_schedule_name},
+                {
+                    "missing_ref": "Schedule:Compact",
+                    "missing_name": number_of_people_schedule_name,
+                },
             )
-        if activity_level_schedule_name and not idf.has("Schedule:Compact", activity_level_schedule_name):
+        if activity_level_schedule_name and not idf.has(
+            "Schedule:Compact", activity_level_schedule_name
+        ):
             return _err(
                 f"Schedule:Compact '{activity_level_schedule_name}' not found.",
-                {"missing_ref": "Schedule:Compact", "missing_name": activity_level_schedule_name},
+                {
+                    "missing_ref": "Schedule:Compact",
+                    "missing_name": activity_level_schedule_name,
+                },
             )
         try:
-            idf.add(People(
-                name=name,
-                zone_or_zonelist_or_space_or_spacelist_name=zone_name,
-                number_of_people_schedule_name=number_of_people_schedule_name,
-                activity_level_schedule_name=activity_level_schedule_name,
-                number_of_people_calculation_method=number_of_people_calculation_method,
-                number_of_people=number_of_people if number_of_people != 0.0 else None,
-                people_per_floor_area=people_per_floor_area if people_per_floor_area != 0.0 else None,
-                floor_area_per_person=floor_area_per_person if floor_area_per_person != 0.0 else None,
-                fraction_radiant=fraction_radiant,
-            ))
+            idf.add(
+                People(
+                    name=name,
+                    zone_or_zonelist_or_space_or_spacelist_name=zone_name,
+                    number_of_people_schedule_name=number_of_people_schedule_name,
+                    activity_level_schedule_name=activity_level_schedule_name,
+                    number_of_people_calculation_method=number_of_people_calculation_method,
+                    number_of_people=number_of_people
+                    if number_of_people != 0.0
+                    else None,
+                    people_per_floor_area=people_per_floor_area
+                    if people_per_floor_area != 0.0
+                    else None,
+                    floor_area_per_person=floor_area_per_person
+                    if floor_area_per_person != 0.0
+                    else None,
+                    fraction_radiant=fraction_radiant,
+                )
+            )
             return _ok(
                 f"People '{name}' created successfully.",
                 idf.get("People", name).model_dump(),
@@ -124,7 +142,9 @@ def make_people_tools(config: ConfigState) -> list[BaseTool]:
             if activity_level_schedule_name is not None:
                 obj.activity_level_schedule_name = activity_level_schedule_name
             if number_of_people_calculation_method is not None:
-                obj.number_of_people_calculation_method = number_of_people_calculation_method
+                obj.number_of_people_calculation_method = (
+                    number_of_people_calculation_method
+                )
             if number_of_people is not None:
                 obj.number_of_people = number_of_people
             if people_per_floor_area is not None:
@@ -157,4 +177,11 @@ def make_people_tools(config: ConfigState) -> list[BaseTool]:
         items = [s.model_dump() for s in idf.all_of_type("Schedule:Compact").values()]
         return _ok(f"Listed {len(items)} schedules.", items)
 
-    return [create_people, list_people, update_people, delete_people, list_zones, list_schedules]
+    return [
+        create_people,
+        list_people,
+        update_people,
+        delete_people,
+        list_zones,
+        list_schedules,
+    ]

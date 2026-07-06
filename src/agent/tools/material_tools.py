@@ -1,7 +1,5 @@
 import json
 
-from langchain_core.tools import BaseTool, tool
-
 from idfpy.models.constructions import (
     Material,
     MaterialAirGap,
@@ -9,6 +7,8 @@ from idfpy.models.constructions import (
     WindowMaterialGlazing,
     WindowMaterialSimpleGlazingSystem,
 )
+from langchain_core.tools import BaseTool, tool
+
 from src.mcp.state import ConfigState
 
 # idfpy object-type strings for each material variant
@@ -63,14 +63,16 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if idf.has("Material", name):
             return _err(f"Material '{name}' already exists.")
         try:
-            idf.add(Material(
-                name=name,
-                roughness=roughness,
-                thickness=thickness,
-                conductivity=conductivity,
-                density=density,
-                specific_heat=specific_heat,
-            ))
+            idf.add(
+                Material(
+                    name=name,
+                    roughness=roughness,
+                    thickness=thickness,
+                    conductivity=conductivity,
+                    density=density,
+                    specific_heat=specific_heat,
+                )
+            )
             return _ok(
                 f"Material '{name}' created successfully.",
                 idf.get("Material", name).model_dump(),
@@ -94,11 +96,13 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if idf.has("Material:NoMass", name):
             return _err(f"Material:NoMass '{name}' already exists.")
         try:
-            idf.add(MaterialNoMass(
-                name=name,
-                roughness=roughness,
-                thermal_resistance=thermal_resistance,
-            ))
+            idf.add(
+                MaterialNoMass(
+                    name=name,
+                    roughness=roughness,
+                    thermal_resistance=thermal_resistance,
+                )
+            )
             return _ok(
                 f"Material:NoMass '{name}' created successfully.",
                 idf.get("Material:NoMass", name).model_dump(),
@@ -148,12 +152,14 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         if idf.has("WindowMaterial:SimpleGlazingSystem", name):
             return _err(f"WindowMaterial:SimpleGlazingSystem '{name}' already exists.")
         try:
-            idf.add(WindowMaterialSimpleGlazingSystem(
-                name=name,
-                u_factor=u_factor,
-                solar_heat_gain_coefficient=solar_heat_gain_coefficient,
-                visible_transmittance=visible_transmittance,
-            ))
+            idf.add(
+                WindowMaterialSimpleGlazingSystem(
+                    name=name,
+                    u_factor=u_factor,
+                    solar_heat_gain_coefficient=solar_heat_gain_coefficient,
+                    visible_transmittance=visible_transmittance,
+                )
+            )
             return _ok(
                 f"WindowMaterial:SimpleGlazingSystem '{name}' created successfully.",
                 idf.get("WindowMaterial:SimpleGlazingSystem", name).model_dump(),
@@ -232,23 +238,25 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             data={"hint": "use create_glazing_material instead"},
         )
         try:  # pragma: no cover - unreachable while the guard above is active
-            idf.add(WindowMaterialGlazing(
-                name=name,
-                optical_data_type="SpectralAverage",
-                thickness=thickness,
-                solar_transmittance_at_normal_incidence=solar_transmittance,
-                front_side_solar_reflectance_at_normal_incidence=front_solar_reflectance,
-                back_side_solar_reflectance_at_normal_incidence=back_solar_reflectance,
-                visible_transmittance_at_normal_incidence=visible_transmittance,
-                front_side_visible_reflectance_at_normal_incidence=front_visible_reflectance,
-                back_side_visible_reflectance_at_normal_incidence=back_visible_reflectance,
-                infrared_transmittance_at_normal_incidence=infrared_transmittance,
-                front_side_infrared_hemispherical_emissivity=front_emissivity,
-                back_side_infrared_hemispherical_emissivity=back_emissivity,
-                conductivity=conductivity,
-                dirt_correction_factor_for_solar_and_visible_transmittance=dirt_correction_factor,
-                solar_diffusing=solar_diffusing,
-            ))
+            idf.add(
+                WindowMaterialGlazing(
+                    name=name,
+                    optical_data_type="SpectralAverage",
+                    thickness=thickness,
+                    solar_transmittance_at_normal_incidence=solar_transmittance,
+                    front_side_solar_reflectance_at_normal_incidence=front_solar_reflectance,
+                    back_side_solar_reflectance_at_normal_incidence=back_solar_reflectance,
+                    visible_transmittance_at_normal_incidence=visible_transmittance,
+                    front_side_visible_reflectance_at_normal_incidence=front_visible_reflectance,
+                    back_side_visible_reflectance_at_normal_incidence=back_visible_reflectance,
+                    infrared_transmittance_at_normal_incidence=infrared_transmittance,
+                    front_side_infrared_hemispherical_emissivity=front_emissivity,
+                    back_side_infrared_hemispherical_emissivity=back_emissivity,
+                    conductivity=conductivity,
+                    dirt_correction_factor_for_solar_and_visible_transmittance=dirt_correction_factor,
+                    solar_diffusing=solar_diffusing,
+                )
+            )
             return _ok(
                 f"WindowMaterial:Glazing '{name}' created successfully.",
                 idf.get("WindowMaterial:Glazing", name).model_dump(),
@@ -271,7 +279,10 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         mat_type, obj = _find_material(idf, name)
         if obj is None:
             return _err(f"Material '{name}' not found.")
-        return _ok(f"Material '{name}' read successfully.", {"type": mat_type, **obj.model_dump()})
+        return _ok(
+            f"Material '{name}' read successfully.",
+            {"type": mat_type, **obj.model_dump()},
+        )
 
     @tool
     def update_material(
@@ -327,8 +338,10 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
                     obj.solar_heat_gain_coefficient = solar_heat_gain_coefficient
                 if visible_transmittance is not None:
                     obj.visible_transmittance = visible_transmittance
-            return _ok(f"Material '{name}' updated successfully.",
-                       {"type": mat_type, **obj.model_dump()})
+            return _ok(
+                f"Material '{name}' updated successfully.",
+                {"type": mat_type, **obj.model_dump()},
+            )
         except Exception as e:
             return _err(f"Error updating material '{name}': {e}")
 
@@ -341,8 +354,16 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
         # Check if any construction references this material
         refs = []
         layer_fields = [
-            "outside_layer", "layer_2", "layer_3", "layer_4", "layer_5",
-            "layer_6", "layer_7", "layer_8", "layer_9", "layer_10",
+            "outside_layer",
+            "layer_2",
+            "layer_3",
+            "layer_4",
+            "layer_5",
+            "layer_6",
+            "layer_7",
+            "layer_8",
+            "layer_9",
+            "layer_10",
         ]
         for c in idf.all_of_type("Construction").values():
             for lf in layer_fields:
@@ -375,9 +396,15 @@ def make_material_tools(config: ConfigState, rag=None) -> list[BaseTool]:
             TABLE_STANDARD_MATERIALS,
             make_rag_tool,
         )
-        tools.append(make_rag_tool([
-            TABLE_STANDARD_MATERIALS,
-            TABLE_NO_MASS_MATERIALS,
-            TABLE_ALL_MATERIALS,
-        ], rag=rag))
+
+        tools.append(
+            make_rag_tool(
+                [
+                    TABLE_STANDARD_MATERIALS,
+                    TABLE_NO_MASS_MATERIALS,
+                    TABLE_ALL_MATERIALS,
+                ],
+                rag=rag,
+            )
+        )
     return tools

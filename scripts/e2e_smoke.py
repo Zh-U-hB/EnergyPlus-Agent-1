@@ -32,7 +32,6 @@ import traceback
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import Command
 
 from src.agent import AgentState, SimContext, build_graph
 from src.agent.runner import run_session
@@ -135,7 +134,10 @@ def scenario_1_build() -> ConfigState | None:
 
     try:
         final = run_session(
-            graph, initial, context, config,
+            graph,
+            initial,
+            context,
+            config,
             on_interrupt=_auto_approve,
             on_event=_on_event,
         )
@@ -196,7 +198,10 @@ def scenario_2_revise(seed_idf: Path) -> bool:
 
     try:
         final = run_session(
-            graph, initial, context, config,
+            graph,
+            initial,
+            context,
+            config,
             on_interrupt=_auto_approve,
             on_event=_on_event,
         )

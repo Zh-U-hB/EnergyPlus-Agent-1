@@ -1,7 +1,7 @@
 # Agent 回跳机制优化目标框架
 
 > **文档目的**：记录当前 agent graph 回跳（back-hop）机制的结构性缺陷，并定义优化后的**理想目标框架**。这是后续实现的设计依据，不是实现本身。
-> **关联**：补充 `agent_test/DIAGNOSTICS.md`（诊断报告）中"根因 B/F + `Command(goto=)` 双时间线"部分。
+> **关联**：补充 `tests/agent/DIAGNOSTICS.md`（诊断报告）中"根因 B/F + `Command(goto=)` 双时间线"部分。
 > **状态**：设计目标，待评审。
 
 ---

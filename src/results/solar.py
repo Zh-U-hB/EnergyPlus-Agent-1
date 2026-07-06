@@ -10,13 +10,21 @@ import math
 import re
 from pathlib import Path
 
-from src.results.idf_geometry import SurfacePolygon, ZoneGeometry, _strip_comments, _split_objects, _parse_fields
+from src.results.idf_geometry import (
+    SurfacePolygon,
+    ZoneGeometry,
+    _parse_fields,
+    _split_objects,
+    _strip_comments,
+)
 
 _SOLAR_VAR = "Surface Outside Face Incident Solar Radiation Rate per Area"
 _COMMENT_RE = re.compile(r"!-[^\n]*")
 
 
-def _surface_normal(vertices: list[tuple[float, float, float]]) -> tuple[float, float, float]:
+def _surface_normal(
+    vertices: list[tuple[float, float, float]],
+) -> tuple[float, float, float]:
     """Unit normal from the first three vertices (Newell-style for quads)."""
     if len(vertices) < 3:
         return (0.0, 0.0, 1.0)
@@ -61,13 +69,12 @@ def estimate_surface_solar_proxy(
     surfaces: list[SurfacePolygon],
     latitude_deg: float = 22.55,
 ) -> dict[str, float]:
-    """Orientation-based relative solar exposure index (0–1) per surface name.
+    """Orientation-based relative solar exposure index (0-1) per surface name.
 
     Not physical W/m² — used when simulation did not output surface solar.
     """
     lat = math.radians(latitude_deg)
     # South azimuth in building coordinates (+Y)
-    south = (0.0, 1.0, 0.0)
     result: dict[str, float] = {}
     for surf in surfaces:
         nx, ny, nz = _surface_normal(surf.vertices)
@@ -75,7 +82,9 @@ def estimate_surface_solar_proxy(
         cos_tilt = abs(nz)  # 0=vertical wall, 1=horizontal
         horiz = math.sqrt(nx * nx + ny * ny) or 1e-9
         # Horizontal component alignment with south
-        south_factor = max(0.0, (ny / horiz) * (1.0 - abs(nz)) + abs(nz) * max(0.0, math.sin(lat)))
+        south_factor = max(
+            0.0, (ny / horiz) * (1.0 - abs(nz)) + abs(nz) * max(0.0, math.sin(lat))
+        )
         sky_view = (1.0 + cos_tilt) / 2.0
         index = south_factor * sky_view
         result[surf.name] = round(max(0.05, min(1.0, index)), 4)
@@ -114,8 +123,8 @@ def parse_eso_surface_solar_mean(eso_path: Path) -> dict[str, float]:
     if not report_ids:
         return {}
 
-    sums: dict[str, float] = {n: 0.0 for n in report_ids.values()}
-    counts: dict[str, int] = {n: 0 for n in report_ids.values()}
+    sums: dict[str, float] = dict.fromkeys(report_ids.values(), 0.0)
+    counts: dict[str, int] = dict.fromkeys(report_ids.values(), 0)
 
     for ln in lines:
         if in_dict or ln.startswith("End") or ln.startswith("Program"):
@@ -138,9 +147,7 @@ def parse_eso_surface_solar_mean(eso_path: Path) -> dict[str, float]:
         counts[sname] += 1
 
     return {
-        name: round(sums[name] / counts[name], 2)
-        for name in sums
-        if counts[name] > 0
+        name: round(sums[name] / counts[name], 2) for name in sums if counts[name] > 0
     }
 
 
@@ -160,4 +167,8 @@ def resolve_surface_solar(
 
     lat = parse_idf_latitude(idf_path) if idf_path else 22.55
     proxy = estimate_surface_solar_proxy(exterior, lat)
-    return proxy, "relative index", "orientation estimate (re-run with surface solar output for W/m²)"
+    return (
+        proxy,
+        "relative index",
+        "orientation estimate (re-run with surface solar output for W/m²)",
+    )

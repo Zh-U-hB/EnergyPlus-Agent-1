@@ -1,42 +1,39 @@
-#!/usr/bin/env python3
 """Generate the text-only test-case corpus for the robustness benchmark.
 
 Creates 9 scale-buckets x 10 cases = 90 ``testdata_prompt.json`` files under
 
-    agent_test/test_data/text_only/<category>/<scale>/case_<NN>/testdata_prompt.json
+    tests/agent/test_data/text_only/<category>/<scale>/case_<NN>/
 
-Every case is built from real, literature-grounded parameters (DOE Commercial
-Reference Buildings, PNNL prototype models, NIST TN 1765) and carries a
-detailed free-text ``description`` so the agent has enough information to
-build geometry without drawings (text-only mode).
+Every case is built from real, literature-grounded parameters (DOE
+Commercial Reference Buildings, PNNL prototype models, NIST TN 1765) and
+carries a detailed free-text ``Description`` so the agent has enough
+information to build geometry without drawings (text-only mode).
 
-Run once:
-    uv run python agent_test/gen_test_data.py
+Idempotent — existing files are overwritten. Run from the repo root:
 
-This is idempotent: existing files are overwritten.
+    uv run python -m tests.agent.gen_test_data
 """
 
-from __future__ import annotations
-
 import json
+import math
 from pathlib import Path
+from typing import Any, Final
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-OUT_ROOT = REPO_ROOT / "agent_test" / "test_data" / "text_only"
+from loguru import logger
 
-CASES_PER_BUCKET = 10
+REPO_ROOT: Final = Path(__file__).resolve().parents[2]
+OUT_ROOT: Final = REPO_ROOT / "tests" / "agent" / "test_data" / "text_only"
 
+CASES_PER_BUCKET: Final = 10
 
-# ---------------------------------------------------------------------------
-# Parameter tables (grounded in DOE / NIST prototypes)
-# Format: category -> scale -> {params}
-# Areas/zones are per-floor unless noted; floors & total zones derived.
-# ---------------------------------------------------------------------------
-BUCKETS: dict[str, dict[str, dict]] = {
+# Parameter tables grounded in DOE / NIST prototypes.
+# category -> scale -> params; areas/zones are per-floor unless noted,
+# floors & total zones derived.
+BUCKETS: Final[dict[str, dict[str, dict[str, Any]]]] = {
     "residential": {
         # small: single-unit dwellings (studio / 1-2BR). Simplest geometry.
         "small": {
-            "area_range": (45, 110),        # m^2 — one unit's footprint
+            "area_range": (45, 110),  # m^2 — one unit's footprint
             "floors": (1, 1),
             "units_per_floor": (1, 1),
             "zones_per_unit": (1, 2),
@@ -52,10 +49,10 @@ BUCKETS: dict[str, dict[str, dict]] = {
                 "loft: open living/kitchen below, sleeping mezzanine + bathroom",
             ],
         },
-        # medium: low-rise multifamily (3 storeys, several stacked units).
-        # Introduces multiple dwellings and a shared core / circulation.
+        # medium: low-rise multifamily (3 storeys, several stacked units)
+        # with multiple dwellings and a shared core / circulation.
         "medium": {
-            "area_range": (600, 1200),       # total building area
+            "area_range": (600, 1200),  # total building area
             "floors": (3, 3),
             "units_per_floor": (2, 4),
             "zones_per_unit": (1, 2),
@@ -71,10 +68,10 @@ BUCKETS: dict[str, dict[str, dict]] = {
                 "per floor: 2 units (2B+1B) + shared lobby + stair + utility",
             ],
         },
-        # large: mid/high-rise apartment tower (10+ storeys, many units/floor).
-        # Most complex: vertical stacking, many dwellings, core + corridor.
+        # large: mid/high-rise apartment tower (10+ storeys, many units per
+        # floor). Most complex: vertical stacking, core + corridor.
         "large": {
-            "area_range": (8000, 20000),     # total building area
+            "area_range": (8000, 20000),  # total building area
             "floors": (10, 18),
             "units_per_floor": (4, 8),
             "zones_per_unit": (1, 2),
@@ -83,11 +80,15 @@ BUCKETS: dict[str, dict[str, dict]] = {
             "city": "Shenzhen",
             "type_label": "High-rise apartment tower",
             "rooms": [
-                "per typical floor: 6 units (mix of 1B-3B) + central core (2 lifts + stairs + lobby)",
-                "per typical floor: 8 compact units along double-loaded corridor + core",
-                "per typical floor: 4 corner units (3B-4B) + 2 lifts + stair + service core",
+                "per typical floor: 6 units (mix of 1B-3B) + central core "
+                "(2 lifts + stairs + lobby)",
+                "per typical floor: 8 compact units along double-loaded corridor "
+                "+ core",
+                "per typical floor: 4 corner units (3B-4B) + 2 lifts + stair "
+                "+ service core",
                 "per typical floor: 6 units + sky lobby + 2 lifts + stair + MEP shaft",
-                "per typical floor: 5 units (2B/3B) + elevator lobby + stair + garbage room",
+                "per typical floor: 5 units (2B/3B) + elevator lobby + stair "
+                "+ garbage room",
             ],
         },
     },
@@ -101,7 +102,8 @@ BUCKETS: dict[str, dict[str, dict]] = {
             "city": "Shenzhen",
             "type_label": "Small office building",
             "rooms": [
-                "4 perimeter offices + central core (corridor + restroom + server closet)",
+                "4 perimeter offices + central core (corridor + restroom "
+                "+ server closet)",
                 "open-plan office + 3 private offices + meeting room + restroom",
                 "reception + open office + 2 meeting rooms + break room + restroom",
                 "co-working space + 3 private offices + pantry + restroom",
@@ -133,11 +135,16 @@ BUCKETS: dict[str, dict[str, dict]] = {
             "city": "Shenzhen",
             "type_label": "Large office / corporate headquarters",
             "rooms": [
-                "typical floor: 4 perimeter zones + core; lobby on ground, data center on basement",
-                "typical floor: open office + meeting rooms + core; ground retail/lobby, top executive floor",
-                "typical floor: open-plan + private offices + core; ground lobby, rooftop plant",
-                "typical floor: 4 open bays + core; podium retail (ground-2), tower offices (3-top)",
-                "typical floor: open office + meeting suite + core; ground lobby, mid mechanical floor",
+                "typical floor: 4 perimeter zones + core; lobby on ground, "
+                "data center on basement",
+                "typical floor: open office + meeting rooms + core; ground "
+                "retail/lobby, top executive floor",
+                "typical floor: open-plan + private offices + core; ground "
+                "lobby, rooftop plant",
+                "typical floor: 4 open bays + core; podium retail (ground-2), "
+                "tower offices (3-top)",
+                "typical floor: open office + meeting suite + core; ground "
+                "lobby, mid mechanical floor",
             ],
         },
     },
@@ -167,8 +174,10 @@ BUCKETS: dict[str, dict[str, dict]] = {
             "city": "Guangzhou",
             "type_label": "Strip mall / supermarket",
             "rooms": [
-                "5-6 retail units along a covered walkway + shared storage + restroom core",
-                "supermarket sales floor + cold storage + dry storage + offices + restroom",
+                "5-6 retail units along a covered walkway + shared storage "
+                "+ restroom core",
+                "supermarket sales floor + cold storage + dry storage + offices "
+                "+ restroom",
                 "6 shop units + food court + common area + restrooms + loading bay",
                 "ground: 5 retail units + storage; upper: offices + staff area",
                 "department store sales + stockrooms + offices + customer restroom",
@@ -183,41 +192,40 @@ BUCKETS: dict[str, dict[str, dict]] = {
             "city": "Shenzhen",
             "type_label": "Large shopping mall",
             "rooms": [
-                "per floor: anchor store + multiple shop units + central atrium + food court + restrooms",
-                "per floor: retail concourse + specialty shops + cinema (top) + dining + restrooms",
-                "per floor: department store + boutiques + circulation mall + services + restrooms",
-                "per floor: hypermarket (ground) + retail units + entertainment zone + food court + restrooms",
-                "per floor: anchor shops + mid-mall retail + atrium + dining terrace + restrooms",
+                "per floor: anchor store + multiple shop units + central atrium "
+                "+ food court + restrooms",
+                "per floor: retail concourse + specialty shops + cinema (top) "
+                "+ dining + restrooms",
+                "per floor: department store + boutiques + circulation mall "
+                "+ services + restrooms",
+                "per floor: hypermarket (ground) + retail units + entertainment "
+                "zone + food court + restrooms",
+                "per floor: anchor shops + mid-mall retail + atrium + dining "
+                "terrace + restrooms",
             ],
         },
     },
 }
 
+# Orientations rotated through the cases to add variety.
+ORIENTATIONS: Final = [0, 90, 180, 270, 45, 135, 225, 315, 15, 75]
 
-# Orientations rotated through the cases to add variety
-ORIENTATIONS = [0, 90, 180, 270, 45, 135, 225, 315, 15, 75]
-
-# Footprint aspect ratios (W:D) to vary geometry per case
-ASPECTS = [(1.0, 1.0), (1.5, 1.0), (2.0, 1.0), (1.2, 1.0), (1.8, 1.0)]
-
-
-def _mid(a: tuple[float, float]) -> float:
-    return round((a[0] + a[1]) / 2, 1)
+# Footprint aspect ratios (W:D) to vary geometry per case.
+ASPECTS: Final = [(1.0, 1.0), (1.5, 1.0), (2.0, 1.0), (1.2, 1.0), (1.8, 1.0)]
 
 
-def _pick(seq: list, i: int) -> str:
-    return seq[i % len(seq)]
+def _mid(bounds: tuple[float, float]) -> float:
+    return round((bounds[0] + bounds[1]) / 2, 1)
 
 
 def build_case(
-    category: str, scale: str, params: dict, idx: int
-) -> dict:
+    category: str, scale: str, params: dict[str, Any], idx: int
+) -> dict[str, Any]:
     """Build one testdata_prompt dict for a (category, scale, idx).
 
-    Supports two zone-count schemas:
-    - Multifamily (residential): ``units_per_floor`` + ``zones_per_unit``
-      -> zones/floor = units_per_floor * zones_per_unit.
-    - Simple (office/retail, legacy): ``zones_per_floor`` directly.
+    Supports two zone-count schemas: multifamily (residential) uses
+    ``units_per_floor`` * ``zones_per_unit``; office/retail use
+    ``zones_per_floor`` directly.
     """
     floors = _mid(params["floors"])
     area_total = _mid(params["area_range"])
@@ -226,32 +234,30 @@ def build_case(
     wwr = _mid(params["wwr_range"])
     orientation = ORIENTATIONS[idx % len(ORIENTATIONS)]
     w, d = ASPECTS[idx % len(ASPECTS)]
-    rooms = _pick(params["rooms"], idx)
+    rooms = params["rooms"][idx % len(params["rooms"])]
     city = params["city"]
     btype = params["type_label"]
 
-    # Multifamily vs simple zone derivation.
     is_multifamily = "units_per_floor" in params
     if is_multifamily:
-        upf = int(round(_mid(params["units_per_floor"])))
-        zpu = int(round(_mid(params["zones_per_unit"])))
-        zpf = upf * zpu          # thermal zones per floor
-        total_zones = int(round(floors * zpf))
+        upf = round(_mid(params["units_per_floor"]))
+        zpu = round(_mid(params["zones_per_unit"]))
+        zpf = upf * zpu
+        total_zones = round(floors * zpf)
     else:
         upf = None
-        zpf = int(round(_mid(params["zones_per_floor"])))
-        total_zones = int(round(floors * zpf))
+        zpf = round(_mid(params["zones_per_floor"]))
+        total_zones = round(floors * zpf)
 
-    # Derive approximate footprint dimensions from per-floor area & aspect.
-    # area = W * D;  W/D = aspect  ->  W = sqrt(area*aspect), D = sqrt(area/aspect)
-    import math
+    # Footprint from per-floor area & aspect ratio:
+    # area = W * D, W/D = aspect  ->  W = sqrt(area*aspect), D = sqrt(area/aspect)
     width = round(math.sqrt(per_floor * w / d), 1)
     depth = round(math.sqrt(per_floor * d / w), 1)
 
     name = f"{category}_{scale}_{idx + 1:02d}"
 
-    # Multifamily-specific clause: surface dwelling-unit count so the agent
-    # knows to create stacked, repeated dwellings (not one big zone).
+    # Multifamily-specific clause: surface the dwelling-unit count so the
+    # agent creates stacked, repeated dwellings, not one big zone.
     unit_clause = ""
     if is_multifamily and upf:
         unit_clause = (
@@ -277,7 +283,7 @@ def build_case(
         f"EnergyPlus without errors."
     )
 
-    data = {
+    data: dict[str, Any] = {
         "TestName": name,
         "Building location": city,
         "Building type": btype,
@@ -285,7 +291,6 @@ def build_case(
         "Number of floors": str(int(floors)),
         "Number of thermal zones per floor of the building": str(zpf),
         "Number of total thermal zones in the building": str(total_zones),
-        # --- extended descriptive fields consumed by build_user_prompt ---
         "Footprint width (east-west, m)": str(width),
         "Footprint depth (north-south, m)": str(depth),
         "Floor-to-floor height (m)": str(height),
@@ -293,7 +298,7 @@ def build_case(
         "Window-to-wall ratio": f"{wwr:.2f}",
         "Space layout": rooms,
         "Description": description,
-        # image fields left empty (text-only mode)
+        # Image fields left empty (text-only mode).
         "Top view path of the building": "",
         "Front view path of the building": "",
         "Building side view path": "",
@@ -305,6 +310,7 @@ def build_case(
 
 
 def main() -> None:
+    """Write every bucket's cases and log per-bucket counts."""
     total = 0
     for category, scales in BUCKETS.items():
         for scale, params in scales.items():
@@ -317,12 +323,11 @@ def main() -> None:
                     encoding="utf-8",
                 )
                 total += 1
-    print(f"Generated {total} cases under {OUT_ROOT}")
-    # sanity: count buckets
+    logger.info("generated {} cases under {}", total, OUT_ROOT)
     for category, scales in BUCKETS.items():
         for scale in scales:
             n = len(list((OUT_ROOT / category / scale).glob("case_*")))
-            print(f"  {category}/{scale}: {n} cases")
+            logger.info("  {}/{}: {} cases", category, scale, n)
 
 
 if __name__ == "__main__":
