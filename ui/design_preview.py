@@ -3,11 +3,14 @@
 Run:  .venv/bin/python ui/design_preview.py
 Open: http://localhost:7860
 """
+
 from pathlib import Path
 
 import gradio as gr
 
-MOCKUP_HTML = (Path(__file__).resolve().parent.parent / "output" / "ui_design" / "mockup.html").read_text(encoding="utf-8")
+MOCKUP_HTML = (
+    Path(__file__).resolve().parent.parent / "output" / "ui_design" / "mockup.html"
+).read_text(encoding="utf-8")
 
 # Wrap the mockup so it fills the viewport inside Gradio's HTML component.
 WRAPPER = f"""

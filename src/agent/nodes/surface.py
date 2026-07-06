@@ -4,12 +4,15 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command
 
 from src.agent.llm import create_llm
-from src.agent.nodes._share import clone_for_phase, invoke_with_self_repair, maybe_backhop
+from src.agent.nodes._share import (
+    clone_for_phase,
+    invoke_with_self_repair,
+    maybe_backhop,
+)
 from src.agent.react import build_react_agent
 from src.agent.state import AgentState, AgentStateUpdate
 from src.agent.tools import make_surface_tools
 from src.agent.trace import TraceCollector, record_phase_trace
-
 
 # Legal back-hop targets for surface: a missing construction hops to
 # construction; a missing zone hops to zone. Declared on the return type
@@ -47,6 +50,10 @@ Rules:
   report; do NOT invent names or create a surface with a broken reference.
 - >= 3 vertices per surface; four-vertex rectangles are most common.
 - Order counter-clockwise when viewed from OUTSIDE the zone.
+- Floor / Roof / Ceiling normals are AUTO-CORRECTED if reversed (the tool
+  flips vertex order so a Floor's outward normal points DOWN and a
+  Roof/Ceiling's points UP), so you do not need to worry about exact tilt,
+  but winding counter-clockwise from outside remains the convention.
 - No two vertices may coincide (tolerance 1e-10 m).
 - outside_boundary_condition:
     * Walls/roofs facing outdoors: 'Outdoors',
@@ -109,6 +116,6 @@ def surface_agent(state: AgentState) -> Command[_SurfaceRoute] | AgentStateUpdat
     summary = final[-1].content if final else "surface done"
     return AgentStateUpdate(
         config_state=local,
-        upstream_request=None,  # consume the back-hop request
+        upstream_request={},  # consume the back-hop request
         messages=[AIMessage(content=f"[surface] {summary}")],
     )

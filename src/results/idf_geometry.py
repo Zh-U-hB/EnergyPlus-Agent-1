@@ -15,7 +15,6 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -26,9 +25,9 @@ class SurfacePolygon:
     """One planar polygon surface from an IDF BuildingSurface:Detailed object."""
 
     name: str
-    surface_type: str          # "Wall" | "Floor" | "Roof" | "Ceiling"
+    surface_type: str  # "Wall" | "Floor" | "Roof" | "Ceiling"
     zone_name: str
-    outside_boundary: str      # "Outdoors" | "Surface" | "Ground" | "Adiabatic" …
+    outside_boundary: str  # "Outdoors" | "Surface" | "Ground" | "Adiabatic" …
     vertices: list[tuple[float, float, float]] = field(default_factory=list)
 
 
@@ -44,9 +43,9 @@ class FenestrationPolygon:
     """
 
     name: str
-    surface_type: str                       # "Window" | "Door" | "GlassDoor" | "TubularDaylightDome" | "TubularDaylightDiffuser"
+    surface_type: str  # "Window" | "Door" | "GlassDoor" | "TubularDaylightDome" | "TubularDaylightDiffuser"
     construction_name: str
-    building_surface_name: str              # host wall/surface name
+    building_surface_name: str  # host wall/surface name
     vertices: list[tuple[float, float, float]] = field(default_factory=list)
 
 
@@ -102,9 +101,12 @@ class ZoneGeometry:
         if not xs:
             return {"xmin": 0, "xmax": 0, "ymin": 0, "ymax": 0, "zmin": 0, "zmax": 0}
         return {
-            "xmin": min(xs), "xmax": max(xs),
-            "ymin": min(ys), "ymax": max(ys),
-            "zmin": min(zs), "zmax": max(zs),
+            "xmin": min(xs),
+            "xmax": max(xs),
+            "ymin": min(ys),
+            "ymax": max(ys),
+            "zmin": min(zs),
+            "zmax": max(zs),
         }
 
     def centroid(self) -> tuple[float, float, float]:

@@ -6,20 +6,19 @@ and return plotly.graph_objects.Figure instances, compatible with gr.Plot.
 Chart catalogue
 ---------------
 2-D charts
-  end_use_bar            – annual end-use energy breakdown (from tabular)
-  monthly_hvac_energy    – monthly zone heating + cooling (stacked bar)
-  zone_temperature_heatmap – zones × months mean temperature
-  thermal_comfort_bars   – comfort / hot / cold hours per zone
-  hvac_demand_profile    – hourly facility HVAC demand (line + peak)
-  temp_humidity_scatter  – zone mean temp vs RH (coloured by zone)
+  end_use_bar            - annual end-use energy breakdown (from tabular)
+  monthly_hvac_energy     - monthly zone heating + cooling (stacked bar)
+  zone_temperature_heatmap - zones x months mean temperature
+  thermal_comfort_bars    - comfort / hot / cold hours per zone
+  hvac_demand_profile     - hourly facility HVAC demand (line + peak)
+  temp_humidity_scatter   - zone mean temp vs RH (coloured by zone)
 
 3-D chart
-  zone_energy_3d         – 3-D building with zones coloured by energy metric
+  zone_energy_3d          - 3-D building with zones coloured by energy metric
 """
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -45,25 +44,37 @@ _ZONE_COLOURS = [
     "#9D755D",  # brown
 ]
 
-_MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_MONTH_LABELS = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
 
 # EnergyPlus CSV variable names (must match exactly)
 _VAR_COOL = "Zone Ideal Loads Supply Air Total Cooling Energy"
 _VAR_HEAT = "Zone Ideal Loads Supply Air Total Heating Energy"
 _VAR_TEMP = "Zone Mean Air Temperature"
-_VAR_RH   = "Zone Air Relative Humidity"
+_VAR_RH = "Zone Air Relative Humidity"
 _VAR_LIGHT = "Zone Lights Electricity Energy"
 _VAR_PEOPLE = "Zone People Total Heating Energy"
-_VAR_HVAC  = "Facility Total HVAC Electricity Demand Rate"
+_VAR_HVAC = "Facility Total HVAC Electricity Demand Rate"
 
 # Layout defaults
-_LAYOUT = dict(
-    font=dict(family="Inter, Arial, sans-serif", size=12),
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    margin=dict(l=60, r=30, t=50, b=50),
-)
+_LAYOUT = {
+    "font": {"family": "Inter, Arial, sans-serif", "size": 12},
+    "plot_bgcolor": "white",
+    "paper_bgcolor": "white",
+    "margin": {"l": 60, "r": 30, "t": 50, "b": 50},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +83,7 @@ _LAYOUT = dict(
 
 
 def _monthly_sum(ts: pd.DataFrame, variable: str) -> pd.DataFrame:
-    """Return a DataFrame (12 rows × N zones) of monthly summed values.
+    """Return a DataFrame (12 rows x N zones) of monthly summed values.
 
     Rows are months 1-12.  Columns are zone keys that have this variable.
     """
@@ -138,8 +149,8 @@ def _comfort_hours(
             rows.append({"zone": col[0], "comfort": 0, "hot": 0, "cold": 0})
             continue
         comfort = int(((vals >= tmin) & (vals <= tmax)).sum())
-        hot     = int((vals > tmax).sum())
-        cold    = int((vals < tmin).sum())
+        hot = int((vals > tmax).sum())
+        cold = int((vals < tmin).sum())
         rows.append({"zone": col[0], "comfort": comfort, "hot": hot, "cold": cold})
     return pd.DataFrame(rows).set_index("zone") if rows else pd.DataFrame()
 
@@ -196,15 +207,17 @@ def end_use_bar(tabular: dict) -> go.Figure:
     for ci, fk in enumerate(useful_fuel_keys):
         values = [r.get(fk) or 0 for r in useful_rows]
         label = fuel_display.get(fk, fk.replace("_kwh", "").replace("_", " ").title())
-        fig.add_trace(go.Bar(
-            name=label,
-            y=use_labels,
-            x=values,
-            orientation="h",
-            marker_color=colours[ci % len(colours)],
-        ))
+        fig.add_trace(
+            go.Bar(
+                name=label,
+                y=use_labels,
+                x=values,
+                orientation="h",
+                marker_color=colours[ci % len(colours)],
+            )
+        )
 
-    building = tabular.get("building_name", "")
+    tabular.get("building_name", "")
     eui = tabular.get("eui_mj_per_m2")
     eui_str = f" | EUI: {eui:.1f} MJ/m²" if eui else ""
 
@@ -213,7 +226,13 @@ def end_use_bar(tabular: dict) -> go.Figure:
         xaxis_title="Energy (kWh)",
         yaxis_title="",
         barmode="group",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1,
+        },
         **_LAYOUT,
     )
     return fig
@@ -235,7 +254,8 @@ def monthly_hvac_energy(ts: pd.DataFrame) -> go.Figure:
         return fig
 
     fig = make_subplots(
-        rows=1, cols=2,
+        rows=1,
+        cols=2,
         subplot_titles=("Monthly Cooling Energy (kWh)", "Monthly Heating Energy (kWh)"),
         shared_yaxes=False,
     )
@@ -247,29 +267,43 @@ def monthly_hvac_energy(ts: pd.DataFrame) -> go.Figure:
         zone_label = zone.replace("_", " ").title()
 
         if not cool.empty and zone in cool.columns:
-            fig.add_trace(go.Bar(
-                name=zone_label,
-                x=[_MONTH_LABELS[m - 1] for m in cool.index],
-                y=cool[zone].tolist(),
-                marker_color=colour,
-                legendgroup=zone,
-                showlegend=True,
-            ), row=1, col=1)
+            fig.add_trace(
+                go.Bar(
+                    name=zone_label,
+                    x=[_MONTH_LABELS[m - 1] for m in cool.index],
+                    y=cool[zone].tolist(),
+                    marker_color=colour,
+                    legendgroup=zone,
+                    showlegend=True,
+                ),
+                row=1,
+                col=1,
+            )
 
         if not heat.empty and zone in heat.columns:
-            fig.add_trace(go.Bar(
-                name=zone_label,
-                x=[_MONTH_LABELS[m - 1] for m in heat.index],
-                y=heat[zone].tolist(),
-                marker_color=colour,
-                legendgroup=zone,
-                showlegend=False,
-            ), row=1, col=2)
+            fig.add_trace(
+                go.Bar(
+                    name=zone_label,
+                    x=[_MONTH_LABELS[m - 1] for m in heat.index],
+                    y=heat[zone].tolist(),
+                    marker_color=colour,
+                    legendgroup=zone,
+                    showlegend=False,
+                ),
+                row=1,
+                col=2,
+            )
 
     fig.update_layout(
         title="Monthly HVAC Energy by Zone",
         barmode="stack",
-        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.08,
+            "xanchor": "right",
+            "x": 1,
+        },
         **_LAYOUT,
     )
     return fig
@@ -292,14 +326,16 @@ def zone_temperature_heatmap(ts: pd.DataFrame) -> go.Figure:
     zones = [z.replace("_", " ").title() for z in monthly.columns]
     month_labels = [_MONTH_LABELS[m - 1] for m in monthly.index]
 
-    fig = go.Figure(data=go.Heatmap(
-        z=monthly.values.T.tolist(),
-        x=month_labels,
-        y=zones,
-        colorscale="RdYlBu_r",
-        colorbar=dict(title="°C"),
-        hovertemplate="Month: %{x}<br>Zone: %{y}<br>Temp: %{z:.1f} °C<extra></extra>",
-    ))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=monthly.values.T.tolist(),
+            x=month_labels,
+            y=zones,
+            colorscale="RdYlBu_r",
+            colorbar={"title": "°C"},
+            hovertemplate="Month: %{x}<br>Zone: %{y}<br>Temp: %{z:.1f} °C<extra></extra>",
+        )
+    )
 
     fig.update_layout(
         title="Monthly Mean Zone Air Temperature (°C)",
@@ -331,45 +367,57 @@ def thermal_comfort_bars(
     zones = [z.replace("_", " ").title() for z in df.index]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name=f"Comfort ({tmin}–{tmax} °C)",
-        y=zones,
-        x=df["comfort"].tolist(),
-        orientation="h",
-        marker_color="#54A24B",
-    ))
-    fig.add_trace(go.Bar(
-        name=f"Too Hot (>{tmax} °C)",
-        y=zones,
-        x=df["hot"].tolist(),
-        orientation="h",
-        marker_color="#E45756",
-    ))
-    fig.add_trace(go.Bar(
-        name=f"Too Cold (<{tmin} °C)",
-        y=zones,
-        x=df["cold"].tolist(),
-        orientation="h",
-        marker_color="#4C78A8",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name=f"Comfort ({tmin}–{tmax} °C)",  # noqa: RUF001
+            y=zones,
+            x=df["comfort"].tolist(),
+            orientation="h",
+            marker_color="#54A24B",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name=f"Too Hot (>{tmax} °C)",
+            y=zones,
+            x=df["hot"].tolist(),
+            orientation="h",
+            marker_color="#E45756",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name=f"Too Cold (<{tmin} °C)",
+            y=zones,
+            x=df["cold"].tolist(),
+            orientation="h",
+            marker_color="#4C78A8",
+        )
+    )
 
     # Comfort percentage annotation
     total_hours = df["comfort"] + df["hot"] + df["cold"]
     comfort_pct = (df["comfort"] / total_hours * 100).round(1)
-    for i, (zone, pct) in enumerate(zip(zones, comfort_pct)):
+    for i, (zone, pct) in enumerate(zip(zones, comfort_pct, strict=False)):
         fig.add_annotation(
             x=total_hours.iloc[i] + 20,
             y=zone,
             text=f"{pct}%",
             showarrow=False,
-            font=dict(size=11, color="#333"),
+            font={"size": 11, "color": "#333"},
         )
 
     fig.update_layout(
-        title=f"Thermal Comfort Hours per Zone (comfort band {tmin}–{tmax} °C)",
+        title=f"Thermal Comfort Hours per Zone (comfort band {tmin}–{tmax} °C)",  # noqa: RUF001
         xaxis_title="Hours",
         barmode="stack",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1,
+        },
         **_LAYOUT,
     )
     return fig
@@ -400,26 +448,28 @@ def hvac_demand_profile(ts: pd.DataFrame) -> go.Figure:
     day_index = list(range(1, len(daily_max) + 1))
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=day_index,
-        y=daily_max.tolist(),
-        mode="lines",
-        name="Daily Peak Demand (W)",
-        line=dict(color="#4C78A8", width=1.5),
-        fill="tozeroy",
-        fillcolor="rgba(76,120,168,0.15)",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=day_index,
+            y=daily_max.tolist(),
+            mode="lines",
+            name="Daily Peak Demand (W)",
+            line={"color": "#4C78A8", "width": 1.5},
+            fill="tozeroy",
+            fillcolor="rgba(76,120,168,0.15)",
+        )
+    )
 
     # Peak annotation
     peak_day = peak_idx // 24 + 1
     fig.add_annotation(
         x=peak_day,
         y=peak_val,
-        text=f"Peak: {peak_val/1000:.1f} kW",
+        text=f"Peak: {peak_val / 1000:.1f} kW",
         showarrow=True,
         arrowhead=2,
         arrowcolor="#E45756",
-        font=dict(color="#E45756", size=11),
+        font={"color": "#E45756", "size": 11},
         ax=30,
         ay=-30,
     )
@@ -438,11 +488,11 @@ def hvac_demand_profile(ts: pd.DataFrame) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 # PMV comfort band assumptions (ISO 7730) when only Ta and RH are known from CSV
-_PMV_MET = 1.2       # office sedentary activity [met]
-_PMV_CLO = 0.5       # light summer indoor clothing [clo]
-_PMV_VR = 0.1        # air speed [m/s]
+_PMV_MET = 1.2  # office sedentary activity [met]
+_PMV_CLO = 0.5  # light summer indoor clothing [clo]
+_PMV_VR = 0.1  # air speed [m/s]
 _PMV_TR_EQUALS_TA = True  # mean radiant temperature ≈ air temperature
-_PMV_LIMIT = 0.5     # |PMV| ≤ this value is treated as comfortable
+_PMV_LIMIT = 0.5  # |PMV| ≤ this value is treated as comfortable
 
 
 def _pmv_comfort_band_traces(
@@ -452,7 +502,7 @@ def _pmv_comfort_band_traces(
     rh_max: float,
     n_grid: int = 80,
 ) -> list[go.Contour]:
-    """Build filled |PMV|≤limit region and boundary contours on a Ta–RH grid."""
+    """Build filled |PMV|≤limit region and boundary contours on a Ta-RH grid."""
     from pythermalcomfort.models import pmv_ppd_iso
 
     t_axis = np.linspace(t_min, t_max, n_grid)
@@ -460,14 +510,14 @@ def _pmv_comfort_band_traces(
     tt, hh = np.meshgrid(t_axis, rh_axis)
     t_flat = tt.ravel()
     rh_flat = hh.ravel()
-    tr_flat = t_flat if _PMV_TR_EQUALS_TA else t_flat
+    tr_flat = t_flat
 
     pmv = np.asarray(
         pmv_ppd_iso(
-            tdb=t_flat,
-            tr=tr_flat,
+            tdb=t_flat.tolist(),
+            tr=tr_flat.tolist(),
             vr=_PMV_VR,
-            rh=rh_flat,
+            rh=rh_flat.tolist(),
             met=_PMV_MET,
             clo=_PMV_CLO,
             wme=0,
@@ -481,8 +531,8 @@ def _pmv_comfort_band_traces(
         x=t_axis,
         y=rh_axis,
         z=comfort_fill,
-        contours=dict(coloring="fill", showlines=False),
-        line=dict(width=0),
+        contours={"coloring": "fill", "showlines": False},
+        line={"width": 0},
         colorscale=[[0, "rgba(84,162,75,0.20)"], [1, "rgba(84,162,75,0.20)"]],
         showscale=False,
         hoverinfo="skip",
@@ -495,15 +545,15 @@ def _pmv_comfort_band_traces(
         x=t_axis,
         y=rh_axis,
         z=pmv,
-        contours=dict(
-            coloring="none",
-            showlabels=True,
-            labelfont=dict(size=9, color="#2d6a2d"),
-            start=-_PMV_LIMIT,
-            end=_PMV_LIMIT,
-            size=_PMV_LIMIT,
-        ),
-        line=dict(color="#54A24B", width=1.5, dash="dot"),
+        contours={
+            "coloring": "none",
+            "showlabels": True,
+            "labelfont": {"size": 9, "color": "#2d6a2d"},
+            "start": -_PMV_LIMIT,
+            "end": _PMV_LIMIT,
+            "size": _PMV_LIMIT,
+        },
+        line={"color": "#54A24B", "width": 1.5, "dash": "dot"},
         showscale=False,
         hoverinfo="skip",
         name="PMV contour",
@@ -517,7 +567,7 @@ def _pmv_comfort_band_traces(
 def temp_humidity_scatter(ts: pd.DataFrame) -> go.Figure:
     """Scatter plot of zone mean temperature vs relative humidity."""
     temp_cols = [c for c in ts.columns if c[1] == _VAR_TEMP]
-    rh_cols   = [c for c in ts.columns if c[1] == _VAR_RH]
+    rh_cols = [c for c in ts.columns if c[1] == _VAR_RH]
 
     if not temp_cols or not rh_cols:
         fig = go.Figure()
@@ -526,12 +576,14 @@ def temp_humidity_scatter(ts: pd.DataFrame) -> go.Figure:
 
     # Match zones
     temp_zones = {c[0]: c for c in temp_cols}
-    rh_zones   = {c[0]: c for c in rh_cols}
+    rh_zones = {c[0]: c for c in rh_cols}
     common_zones = sorted(set(temp_zones) & set(rh_zones))
 
     if not common_zones:
         fig = go.Figure()
-        fig.update_layout(title="No matching zones for temp/humidity scatter", **_LAYOUT)
+        fig.update_layout(
+            title="No matching zones for temp/humidity scatter", **_LAYOUT
+        )
         return fig
 
     # Collect points for axis limits (downsampled for scatter)
@@ -564,21 +616,22 @@ def temp_humidity_scatter(ts: pd.DataFrame) -> go.Figure:
             fig.add_trace(trace)
 
     for zi, (zone, t_sel, rh_sel) in enumerate(scatter_series):
-        fig.add_trace(go.Scatter(
-            x=t_sel.tolist(),
-            y=rh_sel.tolist(),
-            mode="markers",
-            name=zone.replace("_", " ").title(),
-            marker=dict(
-                color=_ZONE_COLOURS[zi % len(_ZONE_COLOURS)],
-                size=4,
-                opacity=0.55,
-            ),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=t_sel.tolist(),
+                y=rh_sel.tolist(),
+                mode="markers",
+                name=zone.replace("_", " ").title(),
+                marker={
+                    "color": _ZONE_COLOURS[zi % len(_ZONE_COLOURS)],
+                    "size": 4,
+                    "opacity": 0.55,
+                },
+            )
+        )
 
     assump = (
-        f"PMV band (ISO 7730): MET={_PMV_MET}, CLO={_PMV_CLO}, "
-        f"vr={_PMV_VR} m/s, tr=Ta"
+        f"PMV band (ISO 7730): MET={_PMV_MET}, CLO={_PMV_CLO}, vr={_PMV_VR} m/s, tr=Ta"
     )
     fig.add_annotation(
         x=0.01,
@@ -589,14 +642,20 @@ def temp_humidity_scatter(ts: pd.DataFrame) -> go.Figure:
         showarrow=False,
         xanchor="left",
         yanchor="top",
-        font=dict(size=9, color="#555"),
+        font={"size": 9, "color": "#555"},
     )
 
     fig.update_layout(
         title="Zone Temperature vs Relative Humidity (PMV comfort band)",
         xaxis_title="Mean Air Temperature (°C)",
         yaxis_title="Relative Humidity (%)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.08,
+            "xanchor": "right",
+            "x": 1,
+        },
         **_LAYOUT,
     )
     return fig
@@ -639,7 +698,9 @@ _METRIC_CONFIG: dict[str, dict] = {
 }
 
 
-def _triangulate_polygon(vertices: list[tuple[float, float, float]]) -> list[tuple[int, int, int]]:
+def _triangulate_polygon(
+    vertices: list[tuple[float, float, float]],
+) -> list[tuple[int, int, int]]:
     """Fan triangulation from the first vertex of a convex polygon.
 
     Returns list of (i, j, k) index triples into *vertices*.
@@ -651,7 +712,7 @@ def _triangulate_polygon(vertices: list[tuple[float, float, float]]) -> list[tup
 
 
 def _build_zone_mesh(
-    zone: "ZoneGeometry",
+    zone: ZoneGeometry,
 ) -> tuple[list[float], list[float], list[float], list[int], list[int], list[int]]:
     """Return (x, y, z, i, j, k) arrays for a Plotly Mesh3d of this zone."""
     all_verts: list[tuple[float, float, float]] = []
@@ -672,7 +733,7 @@ def _build_zone_mesh(
         if len(verts) < 3:
             continue
         local_indices = [_vert_idx(v) for v in verts]
-        for (li, lj, lk) in _triangulate_polygon(verts):
+        for li, lj, lk in _triangulate_polygon(verts):
             tri_i.append(local_indices[li])
             tri_j.append(local_indices[lj])
             tri_k.append(local_indices[lk])
@@ -733,16 +794,16 @@ def operation_schedule_heatmap(
     mode: str = "people",
     zone_key: str | None = None,
 ) -> go.Figure:
-    """Calendar heatmap: x = date, y = hour of day, color = operation level (0–1).
+    """Calendar heatmap: x = date, y = hour of day, color = operation level (0-1).
 
     Parameters
     ----------
     mode:
-        ``"people"`` — occupancy from people internal gains;
-        ``"equipment"`` — equipment proxy via lighting electricity;
+        ``"people"`` - occupancy from people internal gains;
+        ``"equipment"`` - equipment proxy via lighting electricity;
         ``"combined"`` — max of both normalized series.
     zone_key:
-        CSV zone key (e.g. ``ZONE_CORE``).  ``None`` or ``ZONE_ALL`` uses the
+        CSV zone key (e.g. ``ZONE_CORE``). ``None`` or ``ZONE_ALL`` uses the
         per-timestep maximum across all zones.
     """
     zone_filter = _resolve_schedule_zone(zone_key)
@@ -755,11 +816,10 @@ def operation_schedule_heatmap(
     def _activity(cols: list) -> pd.Series:
         if not cols:
             return pd.Series(0.0, index=ts.index)
-        sub = pd.DataFrame({str(c): ts[c].values for c in cols}, index=ts.index).fillna(0)
-        if len(cols) == 1:
-            series = sub.iloc[:, 0]
-        else:
-            series = sub.max(axis=1)
+        sub = pd.DataFrame({str(c): ts[c].values for c in cols}, index=ts.index).fillna(
+            0
+        )
+        series = sub.iloc[:, 0] if len(cols) == 1 else sub.max(axis=1)
         peak = float(series.max())
         if peak > 0:
             return series / peak
@@ -790,11 +850,13 @@ def operation_schedule_heatmap(
             month, day = (int(x) for x in date_part.split("/"))
             hour = int(time_part.split(":")[0])
             dt = datetime(2024, month, day)
-            rows.append({
-                "date": dt.strftime("%Y-%m-%d"),
-                "hour": hour,
-                "activity": float(val),
-            })
+            rows.append(
+                {
+                    "date": dt.strftime("%Y-%m-%d"),
+                    "hour": hour,
+                    "activity": float(val),
+                }
+            )
         except (ValueError, IndexError):
             continue
 
@@ -817,19 +879,21 @@ def operation_schedule_heatmap(
                 row_vals.append(None)
         z.append(row_vals)
 
-    fig = go.Figure(data=go.Heatmap(
-        z=z,
-        x=dates,
-        y=[f"{h:02d}:00" for h in hours],
-        colorscale="YlOrRd",
-        colorbar=dict(title="Operation level"),
-        hovertemplate="Date: %{x}<br>Hour: %{y}<br>Level: %{z:.2f}<extra></extra>",
-    ))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z,
+            x=dates,
+            y=[f"{h:02d}:00" for h in hours],
+            colorscale="YlOrRd",
+            colorbar={"title": "Operation level"},
+            hovertemplate="Date: %{x}<br>Hour: %{y}<br>Level: %{z:.2f}<extra></extra>",
+        )
+    )
     fig.update_layout(
         title=f"{title_mode} — {zone_suffix} (darker = higher activity)",
         xaxis_title="Date",
         yaxis_title="Hour of day",
-        yaxis=dict(autorange="reversed"),
+        yaxis={"autorange": "reversed"},
         **_LAYOUT,
     )
     return fig
@@ -847,7 +911,7 @@ def operation_schedule_pair(
 
 
 def exterior_solar_irradiation_3d(
-    zones: dict[str, "ZoneGeometry"],
+    zones: dict[str, ZoneGeometry],
     surface_values: dict[str, float],
     unit: str = "W/m²",
     source_note: str = "",
@@ -880,25 +944,37 @@ def exterior_solar_irradiation_3d(
             f"Type: {surf.surface_type}<br>"
             f"Solar: {val:.2f} {unit}"
         )
-        fig.add_trace(go.Mesh3d(
-            x=xs, y=ys, z=zs,
-            i=ti, j=tj, k=tk,
-            intensity=intensity,
-            cmin=0.0,
-            cmax=1.0,
-            colorscale="YlOrRd",
-            showscale=(si == 0),
-            colorbar=dict(
-                title=f"Solar irradiation<br>({unit})",
-                tickvals=[0, 0.5, 1],
-                ticktext=[f"{vmin:.1f}", f"{(vmin+vmax)/2:.1f}", f"{vmax:.1f}"],
-            ) if si == 0 else None,
-            opacity=0.9,
-            name=surf.name,
-            hoverinfo="text",
-            hovertext=hover,
-            flatshading=True,
-        ))
+        fig.add_trace(
+            go.Mesh3d(
+                x=xs,
+                y=ys,
+                z=zs,
+                i=ti,
+                j=tj,
+                k=tk,
+                intensity=intensity,
+                cmin=0.0,
+                cmax=1.0,
+                colorscale="YlOrRd",
+                showscale=(si == 0),
+                colorbar={
+                    "title": f"Solar irradiation<br>({unit})",
+                    "tickvals": [0, 0.5, 1],
+                    "ticktext": [
+                        f"{vmin:.1f}",
+                        f"{(vmin + vmax) / 2:.1f}",
+                        f"{vmax:.1f}",
+                    ],
+                }
+                if si == 0
+                else None,
+                opacity=0.9,
+                name=surf.name,
+                hoverinfo="text",
+                hovertext=hover,
+                flatshading=True,
+            )
+        )
 
     title = "3D Exterior Surface Solar Irradiation"
     if source_note:
@@ -906,21 +982,21 @@ def exterior_solar_irradiation_3d(
 
     fig.update_layout(
         title=title,
-        scene=dict(
-            xaxis_title="X (m)",
-            yaxis_title="Y (m)",
-            zaxis_title="Z (m)",
-            aspectmode="data",
-            camera=dict(eye=dict(x=1.8, y=-1.8, z=1.2)),
-        ),
-        margin=dict(l=0, r=0, t=50, b=0),
+        scene={
+            "xaxis_title": "X (m)",
+            "yaxis_title": "Y (m)",
+            "zaxis_title": "Z (m)",
+            "aspectmode": "data",
+            "camera": {"eye": {"x": 1.8, "y": -1.8, "z": 1.2}},
+        },
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
         paper_bgcolor="white",
     )
     return fig
 
 
 def _build_surface_mesh(
-    poly: "SurfacePolygon",
+    poly: SurfacePolygon,
 ) -> tuple[list[float], list[float], list[float], list[int], list[int], list[int]]:
     """Mesh arrays for a single surface polygon."""
     from src.results.idf_geometry import SurfacePolygon  # noqa: F401
@@ -942,7 +1018,7 @@ def _build_surface_mesh(
     if len(verts) < 3:
         return [], [], [], [], [], []
     local_indices = [_vert_idx(v) for v in verts]
-    for (li, lj, lk) in _triangulate_polygon(verts):
+    for li, lj, lk in _triangulate_polygon(verts):
         tri_i.append(local_indices[li])
         tri_j.append(local_indices[lj])
         tri_k.append(local_indices[lk])
@@ -954,7 +1030,7 @@ def _build_surface_mesh(
 
 
 def zone_energy_3d(
-    zones: dict[str, "ZoneGeometry"],
+    zones: dict[str, ZoneGeometry],
     ts: pd.DataFrame,
     metric: str = "cooling",
     zone_metadata: dict[str, dict] | None = None,
@@ -992,7 +1068,9 @@ def zone_energy_3d(
 
     # Build CSV-key → IDF-zone-name mapping
     # CSV keys are like "ZONE_CORE", IDF names are like "Zone_Core"
-    from src.results.idf_geometry import idf_zone_to_csv_key  # local import to avoid circulars
+    from src.results.idf_geometry import (
+        idf_zone_to_csv_key,
+    )  # local import to avoid circulars
 
     idf_to_csv: dict[str, str] = {z: idf_zone_to_csv_key(z) for z in zones}
 
@@ -1039,61 +1117,75 @@ def zone_energy_3d(
         if area_m2 is not None:
             hover_lines.append(f"Floor area: {area_m2:.1f} m²")
         if multiplier is not None:
-            floors = int(multiplier) if float(multiplier) == int(multiplier) else multiplier
+            floors = (
+                int(multiplier) if float(multiplier) == int(multiplier) else multiplier
+            )
             hover_lines.append(f"Stories (multiplier): {floors}")
         hover_text = "<br>".join(hover_lines)
         hover_list = [hover_text] * len(xs)
 
-        fig.add_trace(go.Mesh3d(
-            x=xs, y=ys, z=zs,
-            i=ti, j=tj, k=tk,
-            intensity=intensity,
-            cmin=0.0,
-            cmax=1.0,
-            colorscale=colorscale,
-            showscale=(zi == 0),  # only first trace shows colorbar
-            colorbar=dict(
-                title=f"{label}<br>({unit})",
-                tickvals=[0, 0.5, 1],
-                ticktext=[
-                    f"{vmin:.1f}",
-                    f"{(vmin+vmax)/2:.1f}",
-                    f"{vmax:.1f}",
-                ],
-            ) if zi == 0 else None,
-            opacity=0.85,
-            name=zone_name,
-            hoverinfo="text",
-            hovertext=hover_list,
-            flatshading=True,
-            lighting=dict(ambient=0.7, diffuse=0.6, specular=0.1),
-        ))
+        fig.add_trace(
+            go.Mesh3d(
+                x=xs,
+                y=ys,
+                z=zs,
+                i=ti,
+                j=tj,
+                k=tk,
+                intensity=intensity,
+                cmin=0.0,
+                cmax=1.0,
+                colorscale=colorscale,
+                showscale=(zi == 0),  # only first trace shows colorbar
+                colorbar={
+                    "title": f"{label}<br>({unit})",
+                    "tickvals": [0, 0.5, 1],
+                    "ticktext": [
+                        f"{vmin:.1f}",
+                        f"{(vmin + vmax) / 2:.1f}",
+                        f"{vmax:.1f}",
+                    ],
+                }
+                if zi == 0
+                else None,
+                opacity=0.85,
+                name=zone_name,
+                hoverinfo="text",
+                hovertext=hover_list,
+                flatshading=True,
+                lighting={"ambient": 0.7, "diffuse": 0.6, "specular": 0.1},
+            )
+        )
 
         # Zone label annotation (as 3-D scatter text)
-        fig.add_trace(go.Scatter3d(
-            x=[cx], y=[cy], z=[cz],
-            mode="text",
-            text=[f"{zone_name.replace('Zone_', '')}<br>{metric_val:.0f} {unit}"],
-            textfont=dict(size=10, color="black"),
-            showlegend=False,
-            hoverinfo="skip",
-        ))
+        fig.add_trace(
+            go.Scatter3d(
+                x=[cx],
+                y=[cy],
+                z=[cz],
+                mode="text",
+                text=[f"{zone_name.replace('Zone_', '')}<br>{metric_val:.0f} {unit}"],
+                textfont={"size": 10, "color": "black"},
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
 
     fig.update_layout(
-        title=f"3D Zone Energy Map – {label}",
-        scene=dict(
-            xaxis_title="X (m)",
-            yaxis_title="Y (m)",
-            zaxis_title="Z (m)",
-            aspectmode="data",
-            camera=dict(eye=dict(x=1.8, y=-1.8, z=1.2)),
-            xaxis=dict(backgroundcolor="rgba(240,240,240,0.5)", gridcolor="white"),
-            yaxis=dict(backgroundcolor="rgba(230,230,230,0.5)", gridcolor="white"),
-            zaxis=dict(backgroundcolor="rgba(220,220,220,0.5)", gridcolor="white"),
-        ),
-        margin=dict(l=0, r=0, t=50, b=0),
+        title=f"3D Zone Energy Map – {label}",  # noqa: RUF001
+        scene={
+            "xaxis_title": "X (m)",
+            "yaxis_title": "Y (m)",
+            "zaxis_title": "Z (m)",
+            "aspectmode": "data",
+            "camera": {"eye": {"x": 1.8, "y": -1.8, "z": 1.2}},
+            "xaxis": {"backgroundcolor": "rgba(240,240,240,0.5)", "gridcolor": "white"},
+            "yaxis": {"backgroundcolor": "rgba(230,230,230,0.5)", "gridcolor": "white"},
+            "zaxis": {"backgroundcolor": "rgba(220,220,220,0.5)", "gridcolor": "white"},
+        },
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
         paper_bgcolor="white",
-        font=dict(family="Inter, Arial, sans-serif", size=12),
+        font={"family": "Inter, Arial, sans-serif", "size": 12},
     )
     return fig
 
@@ -1115,8 +1207,12 @@ def all_2d_charts(
         "comfort": thermal_comfort_bars(ts),
         "hvac_demand": hvac_demand_profile(ts),
         "temp_rh_scatter": temp_humidity_scatter(ts),
-        "operation_schedule_people": operation_schedule_heatmap(ts, mode="people", zone_key=None),
+        "operation_schedule_people": operation_schedule_heatmap(
+            ts, mode="people", zone_key=None
+        ),
         "operation_schedule_equipment": operation_schedule_heatmap(
-            ts, mode="equipment", zone_key=None,
+            ts,
+            mode="equipment",
+            zone_key=None,
         ),
     }

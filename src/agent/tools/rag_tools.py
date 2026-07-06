@@ -55,6 +55,7 @@ def _get_rag() -> RAGSystem | None:
 
     try:
         from src.rag.rag import RAGSystem  # local import to keep startup fast
+
         _rag = RAGSystem(
             qdrant_url=qdrant_url,
             qdrant_api_key=qdrant_api_key,
@@ -80,6 +81,7 @@ TABLE_SIZING_PERIOD_DESIGN_DAY: Final = "sizingperiod_designday"
 
 # ── Tool factory ──────────────────────────────────────────────────────────────
 
+
 def make_rag_tool(
     allowed_tables: list[str] | None = None,
     top_k: int = 5,
@@ -92,7 +94,7 @@ def make_rag_tool(
         allowed_tables: Tables to search. Searches are merged and re-ranked by
             cosine score. Pass None to search across all tables.
         top_k: Maximum number of results to return.
-        score_threshold: Minimum cosine similarity (0.0–1.0).
+        score_threshold: Minimum cosine similarity (0.0-1.0).
         rag: RAGSystem instance to use. If None, the module-level singleton is
             used (obtained via _get_rag()). Pass an explicit instance for testing.
     """
@@ -129,14 +131,16 @@ def make_rag_tool(
             ASHRAE typical values and proceed.
         """
         if rag is None:
-            return json.dumps({
-                "success": False,
-                "message": (
-                    "EnergyPlus reference database is unavailable. "
-                    "Use ASHRAE default values and proceed."
-                ),
-                "data": None,
-            })
+            return json.dumps(
+                {
+                    "success": False,
+                    "message": (
+                        "EnergyPlus reference database is unavailable. "
+                        "Use ASHRAE default values and proceed."
+                    ),
+                    "data": None,
+                }
+            )
 
         try:
             results = []
@@ -160,14 +164,16 @@ def make_rag_tool(
                 )
 
             if not results:
-                return json.dumps({
-                    "success": True,
-                    "message": (
-                        "No matching records found in the EnergyPlus reference "
-                        "database. Use ASHRAE default values and proceed."
-                    ),
-                    "data": [],
-                })
+                return json.dumps(
+                    {
+                        "success": True,
+                        "message": (
+                            "No matching records found in the EnergyPlus reference "
+                            "database. Use ASHRAE default values and proceed."
+                        ),
+                        "data": [],
+                    }
+                )
 
             records = [
                 {
@@ -179,20 +185,24 @@ def make_rag_tool(
                 }
                 for r in results
             ]
-            return json.dumps({
-                "success": True,
-                "message": f"Found {len(records)} matching EnergyPlus reference records.",
-                "data": records,
-            })
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": f"Found {len(records)} matching EnergyPlus reference records.",
+                    "data": records,
+                }
+            )
 
         except Exception as exc:
-            return json.dumps({
-                "success": False,
-                "message": (
-                    f"RAG query failed: {exc}. "
-                    "Use ASHRAE default values and proceed."
-                ),
-                "data": None,
-            })
+            return json.dumps(
+                {
+                    "success": False,
+                    "message": (
+                        f"RAG query failed: {exc}. "
+                        "Use ASHRAE default values and proceed."
+                    ),
+                    "data": None,
+                }
+            )
 
     return search_energyplus_reference

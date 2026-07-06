@@ -63,5 +63,6 @@ class LLMConfig(BaseModel):
         default=None, description="The API key of the LLM model"
     )
     model_kwargs: dict | None = Field(
-        default=None, description="Extra kwargs forwarded to the model (e.g. thinking mode)"
+        default=None,
+        description="Extra kwargs forwarded to the model (e.g. thinking mode)",
     )

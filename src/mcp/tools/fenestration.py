@@ -1,6 +1,6 @@
 from typing import Any
 
-from idfpy.models.thermal_zones import FenestrationSurfaceDetailed
+from idfpy.models import FenestrationSurfaceDetailed
 
 from src.mcp.state import ConfigState
 from src.mcp.tools.base import BaseTool, normalize_payload

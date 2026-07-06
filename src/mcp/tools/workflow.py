@@ -2,11 +2,53 @@ import time
 from pathlib import Path
 
 from src.mcp.interface import ToolResponse
-from src.mcp.state import ConfigState
+from src.mcp.state import ConfigState, _idf_values
 from src.runner.runner import EnergyPlusRunner
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def validate_geometry_completeness(state: ConfigState) -> list[str]:
+    """Return blocking geometry-completeness errors before simulation.
+
+    Reference validation catches dangling names, but an empty or envelope-less
+    model can still pass those checks and either run as an empty building or
+    fail late in EnergyPlus. This preflight gate prevents those false
+    successes and gives the revise loop concrete repair instructions.
+    """
+    errors: list[str] = []
+    zones = _idf_values(state.idf, "Zone")
+    surfaces = _idf_values(state.idf, "BuildingSurface:Detailed")
+
+    if not zones:
+        errors.append(
+            "Model geometry incomplete: 0 Zone objects. Create thermal zones "
+            "before simulation."
+        )
+    if not surfaces:
+        errors.append(
+            "Model geometry incomplete: 0 BuildingSurface:Detailed objects. "
+            "Create wall/floor/roof surfaces before simulation."
+        )
+
+    if zones and surfaces:
+        surfaces_by_zone: dict[str, int] = {}
+        for surface in surfaces:
+            zone_name = getattr(surface, "zone_name", "")
+            if zone_name:
+                surfaces_by_zone[zone_name] = surfaces_by_zone.get(zone_name, 0) + 1
+        for zone in zones:
+            name = getattr(zone, "name", "")
+            if name and surfaces_by_zone.get(name, 0) == 0:
+                errors.append(
+                    "Model geometry incomplete: Zone "
+                    f"'{name}' has 0 BuildingSurface:Detailed objects. "
+                    "Create wall/floor/roof surfaces for this zone before "
+                    "simulation."
+                )
+
+    return errors
 
 
 class WorkflowTool:
@@ -80,6 +122,14 @@ class WorkflowTool:
                     data=validation.data,
                 )
 
+            geometry_errors = validate_geometry_completeness(self.state)
+            if geometry_errors:
+                return ToolResponse(
+                    success=False,
+                    message=("Geometry completeness errors, cannot run simulation."),
+                    data={"errors": geometry_errors},
+                )
+
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             temp_idf = Path(output_dir) / f"temp_{timestamp}.idf"
             self.state.save_idf(temp_idf)
@@ -94,7 +144,10 @@ class WorkflowTool:
                 return ToolResponse(
                     success=False,
                     message="EnergyPlus simulation failed.",
-                    data={"idf_path": str(temp_idf.absolute()), "output_dir": output_dir},
+                    data={
+                        "idf_path": str(temp_idf.absolute()),
+                        "output_dir": output_dir,
+                    },
                 )
 
             return ToolResponse(
@@ -104,7 +157,9 @@ class WorkflowTool:
             )
         except Exception as e:
             logger.exception("Error running simulation")
-            return ToolResponse(success=False, message=f"Error running simulation: {e!s}")
+            return ToolResponse(
+                success=False, message=f"Error running simulation: {e!s}"
+            )
 
     def get_summary(self) -> ToolResponse:
         return ToolResponse(

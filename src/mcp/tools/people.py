@@ -1,6 +1,6 @@
 from typing import Any
 
-from idfpy.models.internal_gains import People
+from idfpy.models import People
 
 from src.mcp.state import ConfigState
 from src.mcp.tools.base import BaseTool, normalize_payload

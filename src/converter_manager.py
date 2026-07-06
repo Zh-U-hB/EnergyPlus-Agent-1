@@ -59,7 +59,8 @@ class ConverterManager:
 
     def load_idf(self, idf_path: Path) -> None:
         self.logger.info("Loading IDF from {}...", idf_path)
-        self._idf = IDF.load(idf_path)
+        loaded = IDF.load(idf_path)
+        self._idf = IDF.from_dict(loaded.to_dict())
         for converter in self.converters.values():
             converter.idf = self._idf
 

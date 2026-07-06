@@ -1,8 +1,9 @@
 import json
+from typing import Literal
 
+from idfpy.models import Lights, ScheduleCompact, Zone
 from langchain_core.tools import BaseTool, tool
 
-from idfpy.models.internal_gains import Lights
 from src.mcp.state import ConfigState
 
 
@@ -22,7 +23,9 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
         name: str,
         zone_name: str,
         schedule_name: str,
-        design_level_calculation_method: str = "Watts/Area",
+        design_level_calculation_method: Literal[
+            "LightingLevel", "Watts/Area", "Watts/Person"
+        ] = "Watts/Area",
         lighting_level: float = 0.0,
         watts_per_floor_area: float = 0.0,
         watts_per_person: float = 0.0,
@@ -42,23 +45,46 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
             fraction_radiant: Radiant fraction (0-1).
             fraction_visible: Visible light fraction (0-1).
         """
-        if idf.has("Lights", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if idf.has(Lights, name):
             return _err(f"Lights '{name}' already exists.")
+        # Reference checks: emit missing_ref so the agent's detect_upstream_gap
+        # can back-hop to the owning phase (zone / schedule) to create it.
+        if zone_name and not idf.has(Zone, zone_name):
+            return _err(
+                f"Zone '{zone_name}' not found.",
+                {"missing_ref": "Zone", "missing_name": zone_name},
+            )
+        if schedule_name and not idf.has("Schedule:Compact", schedule_name):
+            return _err(
+                f"Schedule:Compact '{schedule_name}' not found.",
+                {"missing_ref": "Schedule:Compact", "missing_name": schedule_name},
+            )
         try:
-            idf.add(Lights(
-                name=name,
-                zone_or_zonelist_or_space_or_spacelist_name=zone_name,
-                schedule_name=schedule_name,
-                design_level_calculation_method=design_level_calculation_method,
-                lighting_level=lighting_level if lighting_level != 0.0 else None,
-                watts_per_floor_area=watts_per_floor_area if watts_per_floor_area != 0.0 else None,
-                watts_per_person=watts_per_person if watts_per_person != 0.0 else None,
-                fraction_radiant=fraction_radiant,
-                fraction_visible=fraction_visible,
-            ))
+            idf.add(
+                Lights(
+                    name=name,
+                    zone_or_zonelist_or_space_or_spacelist_name=zone_name,
+                    schedule_name=schedule_name,
+                    design_level_calculation_method=design_level_calculation_method,
+                    lighting_level=lighting_level if lighting_level != 0.0 else None,
+                    watts_per_floor_area=watts_per_floor_area
+                    if watts_per_floor_area != 0.0
+                    else None,
+                    watts_per_person=watts_per_person
+                    if watts_per_person != 0.0
+                    else None,
+                    fraction_radiant=fraction_radiant,
+                    fraction_visible=fraction_visible,
+                )
+            )
+            data = idf.get(Lights, name)
+            if data is None:
+                raise ValueError("Lights not found")
             return _ok(
                 f"Lights '{name}' created successfully.",
-                idf.get("Lights", name).model_dump(),
+                data.model_dump(),
             )
         except Exception as e:
             return _err(f"Error creating lights '{name}': {e}")
@@ -66,7 +92,9 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_lights() -> str:
         """List all Lights objects."""
-        items = [lt.model_dump() for lt in idf.all_of_type("Lights").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [lt.model_dump() for lt in idf.all_of_type(Lights).values()]
         return _ok(f"Listed {len(items)} Lights objects.", items)
 
     @tool
@@ -74,7 +102,10 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
         name: str,
         zone_name: str | None = None,
         schedule_name: str | None = None,
-        design_level_calculation_method: str | None = None,
+        design_level_calculation_method: Literal[
+            "LightingLevel", "Watts/Area", "Watts/Person"
+        ]
+        | None = None,
         lighting_level: float | None = None,
         watts_per_floor_area: float | None = None,
         watts_per_person: float | None = None,
@@ -95,16 +126,18 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
                 Load values (use the one matching the calculation method).
             fraction_radiant / fraction_visible: Light distribution fractions (0-1).
         """
-        obj = idf.get("Lights", name)
+        if idf is None:
+            raise ValueError("IDF is None")
+        obj = idf.get(Lights, name)
         if obj is None:
             return _err(f"Lights '{name}' not found.")
         try:
             if zone_name is not None:
-                if not idf.has("Zone", zone_name):
+                if not idf.has(Zone, zone_name):
                     return _err(f"Zone '{zone_name}' not found.")
                 obj.zone_or_zonelist_or_space_or_spacelist_name = zone_name
             if schedule_name is not None:
-                if not idf.has("Schedule:Compact", schedule_name):
+                if not idf.has(ScheduleCompact, schedule_name):
                     return _err(f"Schedule '{schedule_name}' not found.")
                 obj.schedule_name = schedule_name
             if design_level_calculation_method is not None:
@@ -126,7 +159,9 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def delete_light(name: str) -> str:
         """Delete a Lights object."""
-        if not idf.has("Lights", name):
+        if idf is None:
+            raise ValueError("IDF is None")
+        if not idf.has(Lights, name):
             return _err(f"Lights '{name}' not found.")
         idf.remove("Lights", name)
         return _ok(f"Lights '{name}' deleted successfully.")
@@ -134,13 +169,24 @@ def make_lights_tools(config: ConfigState) -> list[BaseTool]:
     @tool
     def list_zones() -> str:
         """Read-only: list zones a Lights load can be assigned to."""
-        items = [z.model_dump() for z in idf.all_of_type("Zone").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [z.model_dump() for z in idf.all_of_type(Zone).values()]
         return _ok(f"Listed {len(items)} zones.", items)
 
     @tool
     def list_schedules() -> str:
         """Read-only: list Schedule:Compact (for schedule_name reference)."""
-        items = [s.model_dump() for s in idf.all_of_type("Schedule:Compact").values()]
+        if idf is None:
+            raise ValueError("IDF is None")
+        items = [s.model_dump() for s in idf.all_of_type(ScheduleCompact).values()]
         return _ok(f"Listed {len(items)} schedules.", items)
 
-    return [create_light, list_lights, update_light, delete_light, list_zones, list_schedules]
+    return [
+        create_light,
+        list_lights,
+        update_light,
+        delete_light,
+        list_zones,
+        list_schedules,
+    ]

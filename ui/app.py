@@ -2,25 +2,29 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
 import threading
 import time
 import traceback
+from collections.abc import Generator
 from html import escape
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 import gradio as gr
+from langchain_core.runnables import RunnableConfig
+
 from src.agent import AgentState, SimContext, build_graph
 from src.agent.runner import run_session
 from src.mcp.state import ConfigState
-from src.utils.logging import setup_logger
-from src.results import load_results, parse_idf_geometry
 from src.results import charts as result_charts
-from src.results.solar import resolve_surface_solar
+from src.results import load_results, parse_idf_geometry
 from src.results.charts import ZONE_ALL
+from src.results.solar import resolve_surface_solar
+from src.utils.logging import setup_logger
 from ui.idf_viewer import build_idf_3d_model
 
 setup_logger(level="WARNING")
@@ -253,13 +257,11 @@ def _save_chat_history(session_id: str, history: list[dict]) -> None:
     and session switching."""
     path = _chat_history_path(session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
+    with contextlib.suppress(Exception):
         path.write_text(
             json.dumps(history, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
         )
-    except Exception:
-        pass
 
 
 def _load_chat_history(session_id: str) -> list[dict]:
@@ -425,7 +427,10 @@ def run_agent(
     """
 
     if not user_input.strip():
-        yield [_msg("assistant", "Please enter a building description before running.")], []
+        yield (
+            [_msg("assistant", "Please enter a building description before running.")],
+            [],
+        )
         return
 
     session_dir = _session_dir(session_id)
@@ -490,14 +495,14 @@ def run_agent(
                 _get_graph(),
                 initial,
                 context,
-                config,
+                RunnableConfig(configurable=config),
                 on_interrupt=on_interrupt,
                 on_event=on_event,
             )
             event_q.put(("done", state))
         except Exception:
             err = traceback.format_exc()
-            print(f"\n{'='*60}\nUI WORKER ERROR:\n{err}\n{'='*60}", flush=True)
+            print(f"\n{'=' * 60}\nUI WORKER ERROR:\n{err}\n{'=' * 60}", flush=True)
             event_q.put(("error", err))
 
     t = threading.Thread(target=worker, daemon=True)
@@ -553,7 +558,11 @@ def run_agent(
             # Persist session meta for the dropdown label
             try:
                 summary = state.get("config_state", None)
-                summary_dict = summary.get_summary().model_dump() if summary and hasattr(summary, "get_summary") else {}
+                summary_dict = (
+                    summary.get_summary().model_dump()
+                    if summary and hasattr(summary, "get_summary")
+                    else {}
+                )
             except Exception:
                 summary_dict = {}
             _save_session_meta(session_id, user_input, summary_dict)
@@ -644,20 +653,31 @@ def _load_visualizations(
         try:
             zones = parse_idf_geometry(result.idf_path)
             fig_3d = result_charts.zone_energy_3d(
-                zones, ts, metric=metric_key, zone_metadata=zone_meta,
+                zones,
+                ts,
+                metric=metric_key,
+                zone_metadata=zone_meta,
             )
             solar_vals, unit, note = resolve_surface_solar(
-                zones, result.run_dir, result.idf_path,
+                zones,
+                result.run_dir,
+                result.idf_path,
             )
             fig_solar_3d = result_charts.exterior_solar_irradiation_3d(
-                zones, solar_vals, unit=unit, source_note=note,
+                zones,
+                solar_vals,
+                unit=unit,
+                source_note=note,
             )
         except Exception as exc:
             print(f"[viz] 3D chart error: {exc}", flush=True)
 
     try:
-        fig_schedule_people, fig_schedule_equipment = result_charts.operation_schedule_pair(
-            ts, zone_key=zone_key,
+        fig_schedule_people, fig_schedule_equipment = (
+            result_charts.operation_schedule_pair(
+                ts,
+                zone_key=zone_key,
+            )
         )
         figs_2d = result_charts.all_2d_charts(ts, tabular)
     except Exception as exc:
@@ -682,7 +702,9 @@ def _load_visualizations(
 def _update_schedules_only(output_dir: Path, zone_key: str) -> tuple:
     try:
         result = load_results(output_dir)
-        return result_charts.operation_schedule_pair(result.timeseries, zone_key=zone_key)
+        return result_charts.operation_schedule_pair(
+            result.timeseries, zone_key=zone_key
+        )
     except FileNotFoundError:
         return None, None
 
@@ -761,7 +783,9 @@ def on_load_3d_model(session_dir_value, idf_file):
         from ui.idf_viewer import _empty_figure
 
         print(f"[viz] 3D model viewer error: {exc}", flush=True)
-        return _empty_figure(f"Failed to build 3-D model: {exc}"), _model_status_markdown(idf_path)
+        return _empty_figure(
+            f"Failed to build 3-D model: {exc}"
+        ), _model_status_markdown(idf_path)
 
 
 def _session_info_markdown(session_id: str) -> str:
@@ -795,7 +819,7 @@ def _refresh_all_for_session(session_id: str, metric_label: str, zone_key: str):
     sdir = _session_dir(session_id) if session_id else None
     empty_10 = (None,) * 10
     if sdir is None or not sdir.exists():
-        return empty_10 + (None, "**Session directory missing.**", gr.update())
+        return (*empty_10, None, "**Session directory missing.**", gr.update())
 
     figs = _load_visualizations(sdir, metric_label, zone_key)
     model_fig, model_status_text = on_load_3d_model(str(sdir), None)
@@ -803,9 +827,12 @@ def _refresh_all_for_session(session_id: str, metric_label: str, zone_key: str):
     # Keep current zone_key if still valid, else reset to ZONE_ALL
     valid_keys = {c[1] for c in zone_choices}
     new_zone = zone_key if zone_key in valid_keys else ZONE_ALL
-    return figs + (model_fig, model_status_text, gr.update(choices=zone_choices, value=new_zone))
-
-
+    return (
+        *figs,
+        model_fig,
+        model_status_text,
+        gr.update(choices=zone_choices, value=new_zone),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2174,9 +2201,7 @@ def _workspace_nav_html() -> str:
 def _message_text(content: Any) -> str:
     if isinstance(content, list):
         return " ".join(
-            str(part.get("text", ""))
-            for part in content
-            if isinstance(part, dict)
+            str(part.get("text", "")) for part in content if isinstance(part, dict)
         )
     return str(content or "")
 
@@ -2225,8 +2250,7 @@ def _agent_progress_html(history: History | None = None) -> str:
     history = history or []
     completed = _completed_agent_labels(history)
     started = any(
-        isinstance(msg, dict) and msg.get("role") == "user"
-        for msg in history
+        isinstance(msg, dict) and msg.get("role") == "user" for msg in history
     )
     terminal = _history_has_terminal_message(history)
     failed = any(
@@ -2253,7 +2277,11 @@ def _agent_progress_html(history: History | None = None) -> str:
             status = "Running"
         else:
             node_class = "node"
-            status = "Queued" if started else ("Ready" if title == "Parse brief" else "Queued")
+            status = (
+                "Queued"
+                if started
+                else ("Ready" if title == "Parse brief" else "Queued")
+            )
         node_html.append(
             f'<div class="{node_class}"><span>{escape(title)}</span>'
             f"<span>{escape(status)}</span></div>"
@@ -2268,7 +2296,13 @@ def _agent_progress_html(history: History | None = None) -> str:
     elif started:
         progress = min(
             95,
-            int(((completed_steps + (0.35 if current_assigned else 0)) / len(_AGENT_PROGRESS_STEPS)) * 100),
+            int(
+                (
+                    (completed_steps + (0.35 if current_assigned else 0))
+                    / len(_AGENT_PROGRESS_STEPS)
+                )
+                * 100
+            ),
         )
         summary = "Agents are working through the building brief. Completed steps update here as the graph runs."
     else:
@@ -2289,7 +2323,7 @@ def _agent_progress_html(history: History | None = None) -> str:
           </div>
           <div class="progress-track" aria-label="Agent graph progress"><span style="--progress: {progress}%;"></span></div>
           <div class="node-grid">
-            {''.join(node_html)}
+            {"".join(node_html)}
           </div>
         </div>
       </div>
@@ -2326,8 +2360,7 @@ def _conversation_html(history: History | None) -> str:
 
     inserted_progress = False
     has_user_message = any(
-        isinstance(msg, dict) and msg.get("role") == "user"
-        for msg in history
+        isinstance(msg, dict) and msg.get("role") == "user" for msg in history
     )
     for msg in history:
         if not isinstance(msg, dict):
@@ -2420,7 +2453,9 @@ def _model_counts(session_id: str) -> dict[str, str]:
                 pass
     return {
         "zones": str(zones) if isinstance(zones, int) and zones > 0 else "--",
-        "surfaces": str(surfaces) if isinstance(surfaces, int) and surfaces > 0 else "--",
+        "surfaces": str(surfaces)
+        if isinstance(surfaces, int) and surfaces > 0
+        else "--",
         "windows": str(windows) if isinstance(windows, int) and windows > 0 else "--",
     }
 
@@ -2459,9 +2494,9 @@ def _result_summary_html(session_id: str) -> str:
     state = "Loaded from output/ui" if has_results else "Waiting for run"
     return f"""
     <div class="result-kpis" aria-label="Simulation result highlights">
-      <article class="kpi-card"><span class="annotation-tag cooling">Cooling driver</span><strong>{'Ready' if has_results else '--'}</strong><span class="small">Highest end-use share</span></article>
-      <article class="kpi-card"><span class="annotation-tag solar">Solar exposure</span><strong>{'Mapped' if has_results else '--'}</strong><span class="small">Exterior surface view</span></article>
-      <article class="kpi-card"><span class="annotation-tag comfort">Comfort band</span><strong>{'Charted' if has_results else '--'}</strong><span class="small">Occupied hours review</span></article>
+      <article class="kpi-card"><span class="annotation-tag cooling">Cooling driver</span><strong>{"Ready" if has_results else "--"}</strong><span class="small">Highest end-use share</span></article>
+      <article class="kpi-card"><span class="annotation-tag solar">Solar exposure</span><strong>{"Mapped" if has_results else "--"}</strong><span class="small">Exterior surface view</span></article>
+      <article class="kpi-card"><span class="annotation-tag comfort">Comfort band</span><strong>{"Charted" if has_results else "--"}</strong><span class="small">Occupied hours review</span></article>
       <article class="kpi-card"><span class="annotation-tag alert">Run state</span><strong>{state}</strong><span class="small">EnergyPlus status</span></article>
     </div>
     """
@@ -2517,7 +2552,10 @@ def build_ui() -> gr.Blocks:
         # LEFT SIDEBAR - dark session list                                     #
         # ------------------------------------------------------------------ #
         with gr.Sidebar(
-            position="left", width=248, open=True, elem_id="chat-sidebar",
+            position="left",
+            width=248,
+            open=True,
+            elem_id="chat-sidebar",
         ):
             gr.HTML(
                 """
@@ -2536,7 +2574,9 @@ def build_ui() -> gr.Blocks:
             session_radio = gr.Radio(
                 choices=_radio_choices(),
                 value=_radio_label_for(_initial_session),
-                label="", container=False, elem_id="session-list",
+                label="",
+                container=False,
+                elem_id="session-list",
             )
             gr.HTML(
                 """
@@ -2560,7 +2600,9 @@ def build_ui() -> gr.Blocks:
                 )
                 with gr.Row(elem_classes="header-actions"):
                     copy_summary_btn = gr.Button(
-                        "Copy summary", elem_id="copy-summary", elem_classes="secondary-button"
+                        "Copy summary",
+                        elem_id="copy-summary",
+                        elem_classes="secondary-button",
                     )
                     export_btn = gr.Button("Export", elem_classes="secondary-button")
 
@@ -2571,65 +2613,69 @@ def build_ui() -> gr.Blocks:
                 )
 
             output_files = gr.File(
-                label="Output files", file_count="multiple",
-                visible=False, interactive=False,
+                label="Output files",
+                file_count="multiple",
+                visible=False,
+                interactive=False,
             )
 
-            with gr.Group(elem_id="composer-wrap"):
-                with gr.Group(elem_id="composer"):
-                    input_text = gr.Textbox(
-                        placeholder="Ask for a model revision, simulation run, validation pass, or result explanation.",
-                        lines=4,
-                        max_lines=8,
-                        container=False,
-                        show_label=False,
-                        elem_id="msg-input",
-                    )
-                    with gr.Row(elem_id="composer-footer"):
-                        with gr.Row(elem_id="composer-tools"):
-                            quick_validate = gr.Button(
-                                "Validate references",
-                                elem_classes=["prompt-chip"],
-                                min_width=120,
-                            )
-                            quick_run = gr.Button(
-                                "Run pipeline",
-                                elem_classes=["prompt-chip", "active"],
-                                min_width=104,
-                            )
-                            quick_explain = gr.Button(
-                                "Explain load drivers",
-                                elem_classes=["prompt-chip"],
-                                min_width=130,
-                            )
-                        epw_file = gr.File(
-                            label="EPW",
-                            file_types=[".epw"],
-                            scale=0,
+            with gr.Group(elem_id="composer-wrap"), gr.Group(elem_id="composer"):
+                input_text = gr.Textbox(
+                    placeholder="Ask for a model revision, simulation run, validation pass, or result explanation.",
+                    lines=4,
+                    max_lines=8,
+                    container=False,
+                    show_label=False,
+                    elem_id="msg-input",
+                )
+                with gr.Row(elem_id="composer-footer"):
+                    with gr.Row(elem_id="composer-tools"):
+                        quick_validate = gr.Button(
+                            "Validate references",
+                            elem_classes=["prompt-chip"],
                             min_width=120,
-                            elem_classes="composer-file",
                         )
-                        image_files = gr.File(
-                            label="Images",
-                            file_types=["image"],
-                            file_count="multiple",
-                            scale=0,
-                            min_width=140,
-                            elem_classes="composer-file",
+                        quick_run = gr.Button(
+                            "Run pipeline",
+                            elem_classes=["prompt-chip", "active"],
+                            min_width=104,
                         )
-                        send_btn = gr.Button(
-                            "Send",
-                            variant="primary",
-                            scale=0,
-                            min_width=86,
-                            elem_classes="send-button",
+                        quick_explain = gr.Button(
+                            "Explain load drivers",
+                            elem_classes=["prompt-chip"],
+                            min_width=130,
                         )
+                    epw_file = gr.File(
+                        label="EPW",
+                        file_types=[".epw"],
+                        scale=0,
+                        min_width=120,
+                        elem_classes="composer-file",
+                    )
+                    image_files = gr.File(
+                        label="Images",
+                        file_types=["image"],
+                        file_count="multiple",
+                        scale=0,
+                        min_width=140,
+                        elem_classes="composer-file",
+                    )
+                    send_btn = gr.Button(
+                        "Send",
+                        variant="primary",
+                        scale=0,
+                        min_width=86,
+                        elem_classes="send-button",
+                    )
 
         # ------------------------------------------------------------------ #
         # RIGHT SIDEBAR - model and results inspector                          #
         # ------------------------------------------------------------------ #
         with gr.Sidebar(
-            position="right", width=500, open=True, elem_id="viz-panel",
+            position="right",
+            width=500,
+            open=True,
+            elem_id="viz-panel",
         ) as viz_panel:
             gr.HTML(
                 """
@@ -2642,117 +2688,146 @@ def build_ui() -> gr.Blocks:
                 </div>
                 """
             )
-            with gr.Group(elem_id="inspector-scroll"):
-                with gr.Tabs(elem_id="inspector-tabs"):
-                    with gr.Tab("Model"):
-                        with gr.Group(elem_classes="inspector-panel", elem_id="model-preview-panel"):
-                            gr.Markdown(
-                                "## 3D model workspace\nLive IDF assembly",
-                                elem_classes="panel-title",
-                            )
-                            model_preview = gr.HTML(_model_preview_html(), elem_id="model-preview")
-                            load_3d_btn = gr.Button(
-                                "Reload model", elem_classes="secondary-button"
-                            )
-                            model_3d = gr.Plot(
-                                label="",
-                                elem_classes="model-stage",
-                                visible=_initial_idf is not None,
-                            )
-                            model_metrics = gr.HTML(
-                                _model_metric_cards(_initial_session),
-                                elem_id="model-metrics",
-                            )
-                            model_status = gr.Markdown(
-                                _model_status_markdown(_initial_idf),
-                                elem_classes="model-note",
-                            )
-                        with gr.Group(elem_classes="inspector-panel", elem_id="model-dossier-panel"):
-                            gr.Markdown(
-                                "## Building dossier\nParsed from conversation",
-                                elem_classes="panel-title",
-                            )
-                            model_dossier = gr.HTML(
-                                _model_dossier_html(_initial_session),
-                                elem_id="model-dossier",
-                            )
-                        with gr.Group(elem_classes="inspector-panel", elem_id="output-files-panel"):
-                            gr.Markdown(
-                                "## IDF assets\nGenerated files",
-                                elem_classes="panel-title",
-                            )
-                            output_files_panel = gr.File(
-                                label="Download", file_count="multiple", interactive=False,
-                            )
+            with (
+                gr.Group(elem_id="inspector-scroll"),
+                gr.Tabs(elem_id="inspector-tabs"),
+            ):
+                with gr.Tab("Model"):
+                    with gr.Group(
+                        elem_classes="inspector-panel",
+                        elem_id="model-preview-panel",
+                    ):
+                        gr.Markdown(
+                            "## 3D model workspace\nLive IDF assembly",
+                            elem_classes="panel-title",
+                        )
+                        gr.HTML(_model_preview_html(), elem_id="model-preview")
+                        load_3d_btn = gr.Button(
+                            "Reload model", elem_classes="secondary-button"
+                        )
+                        model_3d = gr.Plot(
+                            label="",
+                            elem_classes="model-stage",
+                            visible=_initial_idf is not None,
+                        )
+                        model_metrics = gr.HTML(
+                            _model_metric_cards(_initial_session),
+                            elem_id="model-metrics",
+                        )
+                        model_status = gr.Markdown(
+                            _model_status_markdown(_initial_idf),
+                            elem_classes="model-note",
+                        )
+                    with gr.Group(
+                        elem_classes="inspector-panel",
+                        elem_id="model-dossier-panel",
+                    ):
+                        gr.Markdown(
+                            "## Building dossier\nParsed from conversation",
+                            elem_classes="panel-title",
+                        )
+                        model_dossier = gr.HTML(
+                            _model_dossier_html(_initial_session),
+                            elem_id="model-dossier",
+                        )
+                    with gr.Group(
+                        elem_classes="inspector-panel", elem_id="output-files-panel"
+                    ):
+                        gr.Markdown(
+                            "## IDF assets\nGenerated files",
+                            elem_classes="panel-title",
+                        )
+                        output_files_panel = gr.File(
+                            label="Download",
+                            file_count="multiple",
+                            interactive=False,
+                        )
 
-                    with gr.Tab("Results"):
-                        with gr.Group(elem_classes="inspector-panel", elem_id="results-summary-panel"):
-                            gr.Markdown(
-                                "## Annotated results\nLoaded after EnergyPlus",
-                                elem_classes="panel-title",
+                with gr.Tab("Results"):
+                    with gr.Group(
+                        elem_classes="inspector-panel",
+                        elem_id="results-summary-panel",
+                    ):
+                        gr.Markdown(
+                            "## Annotated results\nLoaded after EnergyPlus",
+                            elem_classes="panel-title",
+                        )
+                        result_summary = gr.HTML(
+                            _result_summary_html(_initial_session),
+                            elem_id="result-summary",
+                        )
+                        with gr.Row():
+                            metric_dd = gr.Dropdown(
+                                choices=_METRIC_OPTIONS,
+                                value=_METRIC_OPTIONS[0],
+                                label="Zone coloring metric",
+                                scale=2,
                             )
-                            result_summary = gr.HTML(
-                                _result_summary_html(_initial_session),
-                                elem_id="result-summary",
+                            zone_dd = gr.Dropdown(
+                                choices=_schedule_zone_choices(
+                                    _session_dir(_initial_session)
+                                ),
+                                value=ZONE_ALL,
+                                label="Schedule zone",
+                                scale=2,
                             )
-                            with gr.Row():
-                                metric_dd = gr.Dropdown(
-                                    choices=_METRIC_OPTIONS,
-                                    value=_METRIC_OPTIONS[0],
-                                    label="Zone coloring metric",
-                                    scale=2,
-                                )
-                                zone_dd = gr.Dropdown(
-                                    choices=_schedule_zone_choices(_session_dir(_initial_session)),
-                                    value=ZONE_ALL,
-                                    label="Schedule zone",
-                                    scale=2,
-                                )
-                            load_btn = gr.Button("Load charts", elem_classes="secondary-button")
-                        gr.HTML(_result_preview_html(), elem_id="result-preview")
-                        plot_3d_energy = gr.Plot(
-                            label="3D Zone Energy Use", elem_classes="chart-card"
+                        load_btn = gr.Button(
+                            "Load charts", elem_classes="secondary-button"
                         )
-                        plot_solar_3d = gr.Plot(
-                            label="3D Exterior Solar Irradiation", elem_classes="chart-card"
-                        )
-                        plot_sched_people = gr.Plot(
-                            label="Occupancy Schedule", elem_classes="chart-card"
-                        )
-                        plot_sched_equip = gr.Plot(
-                            label="Equipment Schedule", elem_classes="chart-card"
-                        )
-                        plot_enduse = gr.Plot(
-                            label="Annual End-Use Energy", elem_classes="chart-card"
-                        )
-                        plot_comfort = gr.Plot(
-                            label="Thermal Comfort", elem_classes="chart-card"
-                        )
-                        plot_monthly = gr.Plot(
-                            label="Monthly HVAC Energy", elem_classes="chart-card"
-                        )
-                        plot_heatmap = gr.Plot(
-                            label="Zone Temperature Heatmap", elem_classes="chart-card"
-                        )
-                        plot_demand = gr.Plot(
-                            label="HVAC Electric Demand", elem_classes="chart-card"
-                        )
-                        plot_scatter = gr.Plot(
-                            label="Temperature-Humidity Scatter", elem_classes="chart-card"
-                        )
+                    gr.HTML(_result_preview_html(), elem_id="result-preview")
+                    plot_3d_energy = gr.Plot(
+                        label="3D Zone Energy Use", elem_classes="chart-card"
+                    )
+                    plot_solar_3d = gr.Plot(
+                        label="3D Exterior Solar Irradiation",
+                        elem_classes="chart-card",
+                    )
+                    plot_sched_people = gr.Plot(
+                        label="Occupancy Schedule", elem_classes="chart-card"
+                    )
+                    plot_sched_equip = gr.Plot(
+                        label="Equipment Schedule", elem_classes="chart-card"
+                    )
+                    plot_enduse = gr.Plot(
+                        label="Annual End-Use Energy", elem_classes="chart-card"
+                    )
+                    plot_comfort = gr.Plot(
+                        label="Thermal Comfort", elem_classes="chart-card"
+                    )
+                    plot_monthly = gr.Plot(
+                        label="Monthly HVAC Energy", elem_classes="chart-card"
+                    )
+                    plot_heatmap = gr.Plot(
+                        label="Zone Temperature Heatmap", elem_classes="chart-card"
+                    )
+                    plot_demand = gr.Plot(
+                        label="HVAC Electric Demand", elem_classes="chart-card"
+                    )
+                    plot_scatter = gr.Plot(
+                        label="Temperature-Humidity Scatter",
+                        elem_classes="chart-card",
+                    )
 
         # ------------------------------------------------------------------ #
         # Hidden state carrying the active session_id across events           #
         # ------------------------------------------------------------------ #
         session_state = gr.Textbox(
-            value=_initial_session, visible=False, elem_id="session-state",
+            value=_initial_session,
+            visible=False,
+            elem_id="session-state",
         )
 
         _all_viz_plots = [
-            plot_3d_energy, plot_solar_3d,
-            plot_sched_people, plot_sched_equip,
-            plot_enduse, plot_comfort, plot_monthly, plot_heatmap,
-            plot_demand, plot_scatter,
+            plot_3d_energy,
+            plot_solar_3d,
+            plot_sched_people,
+            plot_sched_equip,
+            plot_enduse,
+            plot_comfort,
+            plot_monthly,
+            plot_heatmap,
+            plot_demand,
+            plot_scatter,
         ]
 
         # ------------------------------------------------------------------ #
@@ -2763,7 +2838,8 @@ def build_ui() -> gr.Blocks:
             sdir = _session_dir(sid) if sid else None
             if not sdir or not sdir.exists():
                 empty10 = (None,) * 10
-                return empty10 + (
+                return (
+                    *empty10,
                     gr.update(value=None, visible=False),
                     _model_status_markdown(None),
                     _model_metric_cards(sid or ""),
@@ -2782,11 +2858,15 @@ def build_ui() -> gr.Blocks:
             zone_choices = _schedule_zone_choices(sdir)
             valid_keys = {c[1] for c in zone_choices}
             new_zone = zone_key if zone_key in valid_keys else ZONE_ALL
-            return figs + (model_update, model_status_text,
-                           _model_metric_cards(sid),
-                           _model_dossier_html(sid),
-                           _result_summary_html(sid),
-                           gr.update(choices=zone_choices, value=new_zone))
+            return (
+                *figs,
+                model_update,
+                model_status_text,
+                _model_metric_cards(sid),
+                _model_dossier_html(sid),
+                _result_summary_html(sid),
+                gr.update(choices=zone_choices, value=new_zone),
+            )
 
         # ------------------------------------------------------------------ #
         # Event: New session                                                  #
@@ -2794,31 +2874,44 @@ def build_ui() -> gr.Blocks:
         def on_new_session():
             sid = _create_session()
             return (
-                gr.update(choices=_radio_choices(), value=_radio_label_for(sid)),  # radio
-                sid,                                            # session_state
-                _top_title_markdown(sid),                       # top_title
-                gr.update(value=_conversation_html([])),        # chatbot
-                gr.update(value=None, visible=False),          # output_files
-                gr.update(open=True),                           # viz_panel
-                *([None] * 10),                                 # _all_viz_plots
-                gr.update(value=None, visible=False),            # model_3d
-                _model_status_markdown(None),                   # model_status
-                _model_metric_cards(sid),                       # model_metrics
-                _model_dossier_html(sid),                       # model_dossier
-                _result_summary_html(sid),                      # result_summary
+                gr.update(
+                    choices=_radio_choices(), value=_radio_label_for(sid)
+                ),  # radio
+                sid,  # session_state
+                _top_title_markdown(sid),  # top_title
+                gr.update(value=_conversation_html([])),  # chatbot
+                gr.update(value=None, visible=False),  # output_files
+                gr.update(open=True),  # viz_panel
+                *([None] * 10),  # _all_viz_plots
+                gr.update(value=None, visible=False),  # model_3d
+                _model_status_markdown(None),  # model_status
+                _model_metric_cards(sid),  # model_metrics
+                _model_dossier_html(sid),  # model_dossier
+                _result_summary_html(sid),  # result_summary
                 gr.update(choices=[("All zones (max)", ZONE_ALL)], value=ZONE_ALL),
-                gr.update(value=None),                          # output_files_panel
-                gr.update(value=""),                            # input_text
+                gr.update(value=None),  # output_files_panel
+                gr.update(value=""),  # input_text
             )
 
         new_btn.click(
             fn=on_new_session,
             inputs=None,
             outputs=[
-                session_radio, session_state, top_title, chatbot, output_files,
-                viz_panel, *_all_viz_plots, model_3d, model_status,
-                model_metrics, model_dossier, result_summary, zone_dd,
-                output_files_panel, input_text,
+                session_radio,
+                session_state,
+                top_title,
+                chatbot,
+                output_files,
+                viz_panel,
+                *_all_viz_plots,
+                model_3d,
+                model_status,
+                model_metrics,
+                model_dossier,
+                result_summary,
+                zone_dd,
+                output_files_panel,
+                input_text,
             ],
         )
 
@@ -2835,14 +2928,14 @@ def build_ui() -> gr.Blocks:
                 sid = _current_session_or_create(None)
             history = _load_chat_history(sid)
             refreshed = _refresh_viz_panel(sid, metric_label, zone_key)
-            has_results = (_session_dir(sid) / "eplusout.csv").exists()
+            (_session_dir(sid) / "eplusout.csv").exists()
             files = _collect_output_files(_session_dir(sid))
             return (
-                sid,                                  # session_state
-                _top_title_markdown(sid),             # top_title
-                gr.update(value=_conversation_html(history)),   # chatbot
-                gr.update(open=True),                 # viz_panel
-                *refreshed,                           # right-panel values
+                sid,  # session_state
+                _top_title_markdown(sid),  # top_title
+                gr.update(value=_conversation_html(history)),  # chatbot
+                gr.update(open=True),  # viz_panel
+                *refreshed,  # right-panel values
                 gr.update(value=files if files else None),  # output_files_panel
             )
 
@@ -2850,9 +2943,17 @@ def build_ui() -> gr.Blocks:
             fn=on_session_select,
             inputs=[session_radio, metric_dd, zone_dd],
             outputs=[
-                session_state, top_title, chatbot, viz_panel,
-                *_all_viz_plots, model_3d, model_status,
-                model_metrics, model_dossier, result_summary, zone_dd,
+                session_state,
+                top_title,
+                chatbot,
+                viz_panel,
+                *_all_viz_plots,
+                model_3d,
+                model_status,
+                model_metrics,
+                model_dossier,
+                result_summary,
+                zone_dd,
                 output_files_panel,
             ],
         )
@@ -2872,21 +2973,22 @@ def build_ui() -> gr.Blocks:
                     gr.update(value=_conversation_html(last_history)),
                     gr.update(value=files if files else None, visible=bool(files)),
                     gr.update(open=True),
-                    *([None] * 10),   # _all_viz_plots
+                    *([None] * 10),  # _all_viz_plots
                     gr.update(value=None, visible=False),  # model_3d
-                    gr.update(),      # model_status
-                    gr.update(),      # model_metrics
-                    gr.update(),      # model_dossier
-                    gr.update(),      # result_summary
-                    gr.update(),      # zone_dd
-                    gr.update(),      # output_files_panel
+                    gr.update(),  # model_status
+                    gr.update(),  # model_metrics
+                    gr.update(),  # model_dossier
+                    gr.update(),  # result_summary
+                    gr.update(),  # zone_dd
+                    gr.update(),  # output_files_panel
                     gr.update(value=""),  # input_text
                 )
             refreshed = _refresh_viz_panel(sid, metric_label, zone_key)
             yield (
                 gr.update(value=_conversation_html(last_history)),
-                gr.update(value=last_files if last_files else None,
-                          visible=bool(last_files)),
+                gr.update(
+                    value=last_files if last_files else None, visible=bool(last_files)
+                ),
                 gr.update(open=True),
                 *refreshed,
                 gr.update(value=last_files if last_files else None),
@@ -2894,21 +2996,41 @@ def build_ui() -> gr.Blocks:
             )
 
         _run_outputs = [
-            chatbot, output_files, viz_panel,
-            *_all_viz_plots, model_3d, model_status,
-            model_metrics, model_dossier, result_summary, zone_dd,
-            output_files_panel, input_text,
+            chatbot,
+            output_files,
+            viz_panel,
+            *_all_viz_plots,
+            model_3d,
+            model_status,
+            model_metrics,
+            model_dossier,
+            result_summary,
+            zone_dd,
+            output_files_panel,
+            input_text,
         ]
         send_btn.click(
             fn=on_run,
-            inputs=[input_text, epw_file, image_files, session_state,
-                    metric_dd, zone_dd],
+            inputs=[
+                input_text,
+                epw_file,
+                image_files,
+                session_state,
+                metric_dd,
+                zone_dd,
+            ],
             outputs=_run_outputs,
         )
         input_text.submit(
             fn=on_run,
-            inputs=[input_text, epw_file, image_files, session_state,
-                    metric_dd, zone_dd],
+            inputs=[
+                input_text,
+                epw_file,
+                image_files,
+                session_state,
+                metric_dd,
+                zone_dd,
+            ],
             outputs=_run_outputs,
         )
 
@@ -2975,19 +3097,25 @@ def build_ui() -> gr.Blocks:
         )
 
         quick_validate.click(
-            fn=lambda: "Validate all construction, schedule, zone, surface, people, lights, and HVAC references before exporting IDF.",
+            fn=lambda: (
+                "Validate all construction, schedule, zone, surface, people, lights, and HVAC references before exporting IDF."
+            ),
             inputs=None,
             outputs=[input_text],
             queue=False,
         )
         quick_run.click(
-            fn=lambda: "Run the full simulation pipeline, then load the 3D model and annotated result charts in the right workspace.",
+            fn=lambda: (
+                "Run the full simulation pipeline, then load the 3D model and annotated result charts in the right workspace."
+            ),
             inputs=None,
             outputs=[input_text],
             queue=False,
         )
         quick_explain.click(
-            fn=lambda: "Compare cooling load distribution by floor and identify zones that need shading or schedule changes.",
+            fn=lambda: (
+                "Compare cooling load distribution by floor and identify zones that need shading or schedule changes."
+            ),
             inputs=None,
             outputs=[input_text],
             queue=False,
@@ -3025,7 +3153,9 @@ def build_ui() -> gr.Blocks:
             outputs=[output_files_panel],
         )
 
-        gr.HTML('<div id="workbench-toast" role="status" aria-live="polite">Summary copied</div>')
+        gr.HTML(
+            '<div id="workbench-toast" role="status" aria-live="polite">Summary copied</div>'
+        )
 
     return demo
 

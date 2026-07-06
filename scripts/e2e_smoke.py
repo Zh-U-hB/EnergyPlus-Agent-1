@@ -30,9 +30,9 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import TypedDict
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import Command
 
 from src.agent import AgentState, SimContext, build_graph
 from src.agent.runner import run_session
@@ -61,10 +61,15 @@ REVISION_PROMPT = (
 )
 
 
-def _inventory(config_state: ConfigState) -> dict[str, object]:
+class _InvEntry(TypedDict):
+    count: int
+    names: list[str]
+
+
+def _inventory(config_state: ConfigState) -> dict[str, _InvEntry]:
     """Count objects by type + capture sample names for integrity checks."""
     idf = config_state.idf
-    result: dict[str, object] = {}
+    result: dict[str, _InvEntry] = {}
     for label, obj_type in [
         ("zone", "Zone"),
         ("material", "Material"),
@@ -81,7 +86,7 @@ def _inventory(config_state: ConfigState) -> dict[str, object]:
     return result
 
 
-def _print_inventory(title: str, inv: dict[str, object]) -> None:
+def _print_inventory(title: str, inv: dict[str, _InvEntry]) -> None:
     print(f"\n  [{title}]")
     for label, info in inv.items():
         names = ", ".join(info["names"]) if info["names"] else "(none)"
@@ -135,7 +140,10 @@ def scenario_1_build() -> ConfigState | None:
 
     try:
         final = run_session(
-            graph, initial, context, config,
+            graph,
+            initial,
+            context,
+            config,
             on_interrupt=_auto_approve,
             on_event=_on_event,
         )
@@ -163,8 +171,8 @@ def scenario_1_build() -> ConfigState | None:
         problems.append("no constructions created")
     if problems:
         print("\n  ⚠ INTEGRITY ISSUES: " + "; ".join(problems))
-    else:
-        print("\n  ✓ Integrity check passed (zones/surfaces/constructions present)")
+        return None
+    print("\n  ✓ Integrity check passed (zones/surfaces/constructions present)")
     return cs
 
 
@@ -196,7 +204,10 @@ def scenario_2_revise(seed_idf: Path) -> bool:
 
     try:
         final = run_session(
-            graph, initial, context, config,
+            graph,
+            initial,
+            context,
+            config,
             on_interrupt=_auto_approve,
             on_event=_on_event,
         )

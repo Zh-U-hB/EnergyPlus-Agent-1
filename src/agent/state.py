@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, Final
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from src.agent._share import DEFAULT_OUTPUT_DIR, MAX_RETRIES
+from src.agent._share import DEFAULT_OUTPUT_DIR, MAX_RETRIES, MAX_SIM_RETRIES
 from src.mcp.state import ConfigState
 from src.validator import (
     BuildingSchema,
@@ -98,6 +98,21 @@ def _merge_upstream_request(old: dict | None, new: dict | None) -> dict | None:
     return new
 
 
+def _overwrite_list(old: list[str] | None, new: list[str] | None) -> list[str]:
+    """Last-write-wins reducer for full-snapshot list fields.
+
+    ``validation_errors`` and ``simulation_errors`` are always written as a
+    COMPLETE freshly-recomputed snapshot (e.g. ``validate_references()`` reruns
+    the whole cross-ref check every time), never as an incremental delta. So
+    any new value — even an empty list, which legitimately means "no errors" —
+    supersedes the previous snapshot. Without this reducer, LangGraph's
+    default ``last_value`` channel raises ``InvalidUpdateError`` when parallel
+    branches (phase-3 hvac/people/lights, or simulate+revise) each return one
+    of these fields in the same superstep, crashing the graph.
+    """
+    return new if new is not None else (old or [])
+
+
 def _get_identity(item: Any) -> str:
     """Return the unique identity key for a schema item.
 
@@ -160,20 +175,7 @@ def _idf_has_objects(cs: ConfigState) -> bool:
     real model (e.g. after ``load_idf``), so this is the reliable way to
     tell whether *cs* actually carries a model.
     """
-    idf = cs._idf
-    if idf is None:
-        return False
-    try:
-        return any(idf.all_of_type(t) for t in (
-            "Zone", "Material", "Material:NoMass", "Material:AirGap",
-            "WindowMaterial:SimpleGlazingSystem", "Construction",
-            "BuildingSurface:Detailed", "FenestrationSurface:Detailed",
-            "Schedule:Compact", "ScheduleTypeLimits",
-            "HVACTemplate:Thermostat", "HVACTemplate:Zone:IdealLoadsAirSystem",
-            "People", "Lights",
-        ))
-    except Exception:
-        return False
+    return cs._has_idf_objects()
 
 
 def _merge_idf(old: ConfigState, new: ConfigState) -> Any:
@@ -190,6 +192,9 @@ def _merge_idf(old: ConfigState, new: ConfigState) -> Any:
     default empty IDF created by ConfigState's constructor).
     """
     from idfpy import IDF
+
+    if old._idf is None or new._idf is None:
+        raise ValueError("IDF is None")
 
     old_d = old._idf.to_dict() if _idf_has_objects(old) else {}
     new_d = new._idf.to_dict() if _idf_has_objects(new) else {}
@@ -289,13 +294,11 @@ def merge_config_state(old: ConfigState, new: ConfigState) -> ConfigState:
 def _idf_from_text(idf_text: str) -> Any:
     """Rebuild an idfpy IDF from saved IDF text (used by merge_config_state
     to recover the seed model on revision turns)."""
-    from idfpy import IDF
-
     import tempfile
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".idf", delete=False
-    ) as tf:
+    from idfpy import IDF
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".idf", delete=False) as tf:
         tf.write(idf_text)
         loaded = IDF.load(Path(tf.name))
         Path(tf.name).unlink()
@@ -319,9 +322,26 @@ class AgentState(BaseModel):
     )
     intake_output: IntakeOutput | None = None
 
-    validation_errors: list[str] = Field(default_factory=list)
+    validation_errors: Annotated[list[str], _overwrite_list] = Field(
+        default_factory=list
+    )
     retry_count: int = 0
     max_retries: int = MAX_RETRIES
+
+    # --- EnergyPlus simulation failure -> revise rollback loop ---
+    # Independent from retry_count (which gates validate's cross-ref
+    # rollback) so the two loops don't starve each other's budget.
+    simulation_errors: Annotated[list[str], _overwrite_list] = Field(
+        default_factory=list
+    )
+    """Fatal/Severe error lines from eplusout.err of the last simulate run.
+    Populated by simulate_node on failure; consumed (and cleared) by
+    revise_node so the LLM gets concrete error text to fix."""
+    sim_retry_count: int = 0
+    """How many times simulate has rolled back to revise for a sim failure."""
+    max_sim_retries: int = MAX_SIM_RETRIES
+    """Cap on simulate->revise rollback rounds. Once exhausted, simulate
+    lets the run fall through to analyze (the test harness records failure)."""
 
     is_revision: bool = False
     """True for multi-turn model edits: the agent should modify the existing
@@ -352,6 +372,8 @@ class AgentStateUpdate(TypedDict, total=False):
     intake_output: IntakeOutput | None
     validation_errors: list[str]
     retry_count: int
+    simulation_errors: list[str]
+    sim_retry_count: int
     is_revision: bool
     upstream_request: dict | None
     hop_count: int

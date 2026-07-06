@@ -4,13 +4,16 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command
 
 from src.agent.llm import create_llm
-from src.agent.nodes._share import clone_for_phase, invoke_with_self_repair, maybe_backhop
+from src.agent.nodes._share import (
+    clone_for_phase,
+    invoke_with_self_repair,
+    maybe_backhop,
+)
 from src.agent.react import build_react_agent
 from src.agent.state import AgentState, AgentStateUpdate
 from src.agent.tools import make_construction_tools
 from src.agent.tools.rag_tools import _get_rag
 from src.agent.trace import TraceCollector, record_phase_trace
-
 
 # Legal back-hop target for construction: a missing material layer hops
 # to the material phase. Declared on the return type so LangGraph accepts
@@ -40,6 +43,36 @@ Rules:
   (e.g., 'ExtWall_Office', 'IntWall_Office', 'Roof_Office', 'Floor_Office',
   'Window_Office').
 - For fenestration, the construction's only layer is the glazing material.
+- FENESTRATION GLAZING RULE — DEFAULT TO SINGLE-LAYER SimpleGlazingSystem:
+  1. PREFERRED: a SINGLE-LAYER whole window whose only layer is a
+     WindowMaterial:SimpleGlazingSystem (created via create_glazing_material).
+     Use this for ALL windows unless the material phase has explicitly
+     created per-pane WindowMaterial:Glazing layers. Even for "double pane"
+     or "triple pane" specs, prefer this — the material phase should have
+     supplied an equivalent whole-window U-factor/SHGC via
+     create_glazing_material. The construction has exactly ONE layer.
+  2. MULTI-LAYER real assembly (ONLY if per-pane layers already exist):
+     per-pane WindowMaterial:Glazing layers (created via
+     create_glazing_layer_material) interleaved with Material:AirGap, e.g.
+     layers=['Clear_Glass_3mm','Air_Gap_13mm','Clear_Glass_3mm']. Use this
+     shape ONLY when list_materials shows WindowMaterial:Glazing objects;
+     otherwise fall back to single-layer SimpleGlazingSystem.
+  NEVER mix WindowMaterial:SimpleGlazingSystem with other layers (gas gaps,
+  extra panes). SimpleGlazingSystem is a whole-window equivalent
+  (U/SHGC/VT only) — combining it with other layers gives EnergyPlus no
+  per-pane data and aborts with a Fatal convergence error.
+  DECISION RULE: if list_materials contains a WindowMaterial:SimpleGlazingSystem,
+  use it as the sole layer of the window construction. Only assemble
+  per-pane layers if the spec explicitly provided per-pane optical data AND
+  the material phase created WindowMaterial:Glazing objects.
+- INTERIOR doors/windows/glass-doors between two zones (hosted on a wall that
+  separates zones, i.e. the wall's outside boundary condition is 'Surface'):
+  use create_airboundary_construction (a Construction:AirBoundary, no layers).
+  This models the door/window as an OPEN passage between zones and avoids the
+  EnergyPlus error "invalid blank Outside Boundary Condition Object" that a
+  regular layered construction would trigger there. Name it e.g.
+  'Interior_Door_Open'. EXTERIOR doors/windows still use a normal layered
+  Construction (glazing for windows, opaque for doors).
 
 Reference database:
 - Call search_energyplus_reference to look up standard layer sequences for
@@ -50,7 +83,9 @@ Reference database:
 """
 
 
-def construction_agent(state: AgentState) -> Command[_ConstructionRoute] | AgentStateUpdate:
+def construction_agent(
+    state: AgentState,
+) -> Command[_ConstructionRoute] | AgentStateUpdate:
     local = clone_for_phase(state)
     tools = make_construction_tools(local, rag=_get_rag())
     collector = TraceCollector(phase="construction")
@@ -95,6 +130,6 @@ def construction_agent(state: AgentState) -> Command[_ConstructionRoute] | Agent
     summary = final[-1].content if final else "construction done"
     return AgentStateUpdate(
         config_state=local,
-        upstream_request=None,  # consume the back-hop request
+        upstream_request={},  # consume the back-hop request
         messages=[AIMessage(content=f"[construction] {summary}")],
     )
