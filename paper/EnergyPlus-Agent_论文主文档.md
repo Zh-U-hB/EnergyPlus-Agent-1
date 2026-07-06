@@ -138,51 +138,13 @@ RAG 控制模块的目标是：在 agent 生成材料热工参数、构造层次
 
 `intake -> [zone, material, schedule] -> cross_ref_foundations -> construction -> surface -> fenestration -> [hvac, people, lights] -> cross_ref_complete -> validate -> simulate -> analyze`
 
-> **图 2　多阶段 Agent 编排流程。** 节点之间的依赖关系由 LangGraph 编排：`intake`/`revise` 同时扇出到基础对象（zone/material/schedule）并并行生成；基础对象汇入 `cross_ref_foundations` 做首次跨引用确认（不通过则短路到 `validate` 反馈修复）；随后构造→表面→窗户顺序生成；围护完成后 HVAC/人员/照明并行生成并汇入 `cross_ref_complete`；`validate` 经人机审查后批准进入 `simulate→analyze`，或带反馈回到 `intake`/`revise`。
+> **图 2　多阶段 Agent 编排流程。** 图中仅用实体箭头表示正常执行路径：START router 根据首轮/修订轮选择 `intake` 或 `revise`，随后进入共享 `AgentState`，扇出到 `zone`、`material`、`schedule` 等基础对象并行生成；`cross_ref_foundations` 作为 Gate A 执行早期引用检查，通过后进入 `construction→surface→fenestration` 的围护结构顺序生成，再扇出到 `hvac`、`people`、`lights` 等负荷与系统节点；完整跨引用检查、`validate` 与人机审查共同构成仿真前门控，批准后进入 `simulate→analyze`。下方控制带以规则形式概括 RAG 约束生成、ConfigState 共享状态契约，以及阶段内自修复、全局定向回滚和设计迭代反馈。
 
-```mermaid
-flowchart TD
-    START((START)) --> entry{"首轮？<br/>/ 修订轮"}
-    entry -- 首轮 --> intake["intake<br/>解析结构化意图"]
-    entry -- 修订轮 --> revise["revise<br/>修订意图"]
+![图 2　多阶段 Agent 编排流程](figures/fig2_agent_workflow.png)
 
-    intake --> Z["zone<br/>热区"]
-    intake --> M["material<br/>材料 ⊕RAG"]
-    intake --> S["schedule<br/>日程 ⊕RAG"]
-    revise --> Z
-    revise --> M
-    revise --> S
+> 该图由 `paper/scripts/fig2_agent_workflow.py` 生成；修改后重新运行该脚本即可更新图片。
 
-    Z --> crf["cross_ref_foundations<br/>基础跨引用校验"]
-    M --> crf
-    S --> crf
-
-    crf -- "引用完整" --> C["construction<br/>构造 ⊕RAG"]
-    crf -. "引用断裂<br/>短路反馈" .-> VAL
-
-    C --> SF["surface<br/>表面"]
-    SF --> F["fenestration<br/>窗户"]
-
-    F --> H["hvac<br/>HVAC ⊕RAG"]
-    F --> P["people<br/>人员"]
-    F --> L["lights<br/>照明"]
-    H --> crc["cross_ref_complete<br/>完整跨引用校验"]
-    P --> crc
-    L --> crc
-
-    crc --> VAL["validate<br/>人机审查 + 多层校验"]
-    VAL -- "批准" --> SIM["simulate<br/>生成 IDF + 运行 EnergyPlus"]
-    VAL -. "拒绝/带反馈" .-> revise
-    SIM --> ANZ["analyze<br/>结果解析与可视化"]
-    ANZ --> END((END))
-
-    classDef rag fill:#eef9f0,stroke:#3b8b5a;
-    class M S C H rag;
-    classDef gate fill:#fdf3ee,stroke:#c87a3b;
-    class crf crc VAL gate;
-```
-
-其中材料、日程与热区等基础对象先生成并完成一次跨引用确认，构造、表面、窗户再依次生成，HVAC、人员、照明等负荷子系统在围护结构完成后生成，最后进行一次完整的跨引用校验。带 "⊕RAG" 标记的节点表示该阶段在生成对象前会先检索 EnergyPlus 参考库（见 3\.2）。
+其中材料、日程与热区等基础对象先生成并完成一次跨引用确认，构造、表面、窗户再依次生成，HVAC、人员、照明等负荷子系统在围护结构完成后生成，最后进行一次完整的跨引用校验。带 "RAG" 标记的节点表示该阶段在生成对象前会先检索 EnergyPlus 参考库（见 3\.2）。
 
 **（2）MCP 工具层与中心配置状态**：系统不让 LLM 直接拼接 IDF 文本，而是通过基于 Model Context Protocol 的工具层对 Building、Location、Zone、Surface、Material、Construction、Fenestration、Schedule、HVAC、People、Lights 及工作流操作执行结构化的创建/查询/修改/删除。所有对象由一个中心化的配置状态统一保存，并支持导出与加载配置、校验引用、生成摘要和运行仿真。
 
