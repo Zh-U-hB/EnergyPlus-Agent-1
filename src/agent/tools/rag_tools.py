@@ -20,7 +20,8 @@ from src.utils.logging import get_logger
 if TYPE_CHECKING:
     from src.rag.rag import RAGSystem
 
-load_dotenv()
+# override=True: project .env wins over any stale shell-exported values.
+load_dotenv(override=True)
 _logger = get_logger(__name__)
 
 # ── Lazy singleton ────────────────────────────────────────────────────────────

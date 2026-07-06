@@ -15,7 +15,8 @@ from src.runner.runner import EnergyPlusRunner
 from src.utils.logging import get_logger, setup_logger
 from src.validator.data_model import BaseSchema
 
-load_dotenv()
+# override=True: project .env wins over any stale shell-exported values.
+load_dotenv(override=True)
 
 logger_time = time.strftime("%Y%m%d_%H%M%S")
 setup_logger(

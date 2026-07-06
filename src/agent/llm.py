@@ -8,7 +8,10 @@ from omegaconf import OmegaConf
 
 from src.configs.config import LLMConfig
 
-load_dotenv()
+# override=True so the project's .env is the source of truth, even if the
+# surrounding shell has exported stale values (e.g. LLM_API_KEY from a previous
+# provider).
+load_dotenv(override=True)
 
 
 def create_llm(config: LLMConfig | None = None) -> BaseChatModel:
