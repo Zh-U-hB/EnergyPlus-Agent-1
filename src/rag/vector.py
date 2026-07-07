@@ -7,6 +7,7 @@ from attr import dataclass
 from src.rag.chunk import Chunk
 from src.utils.logging import get_logger
 
+# Canonical payload keys written by Chunk.to_qdrant_payload().
 _PAYLOAD_CORE_KEYS = {
     "description",
     "table_name",
@@ -14,6 +15,29 @@ _PAYLOAD_CORE_KEYS = {
     "data_dict",
     "datetime",
 }
+
+# Legacy index used different field names. Map each canonical key to the
+# ordered list of fallback keys to try when reading old payloads.
+# (current code writes "description" / "table_name"; the historical index
+# stored "data_description" / "vectored_table_name").
+_PAYLOAD_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "description": ("description", "data_description"),
+    "table_name": ("table_name", "vectored_table_name"),
+    "record_id": ("record_id",),
+    "datetime": ("datetime",),
+    "data_dict": ("data_dict",),
+}
+
+# All keys that ever held core data (used to strip metadata cleanly).
+_PAYLOAD_ALL_CORE_KEYS = set().union(*_PAYLOAD_FIELD_ALIASES.values())
+
+
+def _payload_get(payload: dict[str, Any], canonical_key: str, default: Any = "") -> Any:
+    """Read a payload field by canonical key, tolerating legacy aliases."""
+    for alias in _PAYLOAD_FIELD_ALIASES.get(canonical_key, (canonical_key,)):
+        if alias in payload:
+            return payload[alias]
+    return default
 
 
 @dataclass
@@ -36,13 +60,38 @@ def _extract_payload(
 ) -> QdrantData:
     return QdrantData(
         id=point_id,
-        description=payload.get("description", ""),
-        table_name=payload.get("table_name", ""),
-        record_id=payload.get("record_id", ""),
-        datetime=payload.get("datetime", 0),
-        full_data=payload.get("data_dict", {}),
-        metadata={k: v for k, v in payload.items() if k not in _PAYLOAD_CORE_KEYS},
+        description=_payload_get(payload, "description", ""),
+        table_name=_payload_get(payload, "table_name", ""),
+        record_id=_payload_get(payload, "record_id", ""),
+        datetime=_payload_get(payload, "datetime", 0),
+        full_data=_payload_get(payload, "data_dict", {}),
+        metadata={
+            k: v for k, v in payload.items() if k not in _PAYLOAD_ALL_CORE_KEYS
+        },
         score=score,
+    )
+
+
+def _build_table_filter(table_name: str | None):
+    """Build a Qdrant filter on the table-name field, tolerant of legacy payloads.
+
+    Old index points store the table name under ``vectored_table_name`` instead
+    of ``table_name``. We use a ``should`` (OR) filter so both schemas match.
+    Returns None when no filter is requested.
+    """
+    if not table_name:
+        return None
+    from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+    return Filter(
+        should=[
+            FieldCondition(
+                key="table_name", match=MatchValue(value=table_name)
+            ),
+            FieldCondition(
+                key="vectored_table_name", match=MatchValue(value=table_name)
+            ),
+        ]
     )
 
 
@@ -204,20 +253,9 @@ class AsyncQdrantVectorStore(IAsyncVectorStore):
         table_name: str | None = None,
         score_threshold: float | None = None,
     ) -> list[QdrantData]:
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-
         await self._ensure_collection()
 
-        search_filter = None
-        if table_name:
-            search_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="table_name",
-                        match=MatchValue(value=table_name),
-                    )
-                ]
-            )
+        search_filter = _build_table_filter(table_name)
 
         query_results = (
             await self.client.query_points(
@@ -288,9 +326,9 @@ class AsyncQdrantVectorStore(IAsyncVectorStore):
                     zero_points.append(
                         {
                             "id": record.id,
-                            "table_name": payload.get("table_name", ""),
-                            "record_id": payload.get("record_id", ""),
-                            "datetime": payload.get("datetime", ""),
+                            "table_name": _payload_get(payload, "table_name", ""),
+                            "record_id": _payload_get(payload, "record_id", ""),
+                            "datetime": _payload_get(payload, "datetime", ""),
                         }
                     )
 
@@ -389,18 +427,7 @@ class QdrantVectorStore(IVectorStore):
         table_name: str | None = None,
         score_threshold: float | None = None,
     ) -> list[QdrantData]:
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-        search_filter = None
-        if table_name:
-            search_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="table_name",
-                        match=MatchValue(value=table_name),
-                    )
-                ]
-            )
+        search_filter = _build_table_filter(table_name)
 
         query_results = self.client.query_points(
             collection_name=self.collection_name,
@@ -466,9 +493,9 @@ class QdrantVectorStore(IVectorStore):
                     zero_points.append(
                         {
                             "id": record.id,
-                            "table_name": payload.get("table_name", ""),
-                            "record_id": payload.get("record_id", ""),
-                            "datetime": payload.get("datetime", ""),
+                            "table_name": _payload_get(payload, "table_name", ""),
+                            "record_id": _payload_get(payload, "record_id", ""),
+                            "datetime": _payload_get(payload, "datetime", ""),
                         }
                     )
 
