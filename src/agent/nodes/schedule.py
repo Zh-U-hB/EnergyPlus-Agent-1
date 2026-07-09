@@ -100,12 +100,18 @@ Rules:
   followed by "AllOtherDays" to catch the rest.
 - Call list_schedules once at the end.
 
-Reference database:
-- Call search_energyplus_reference to look up standard schedule type limit
-  bounds (e.g. 'temperature type limits heating cooling') or reference compact
-  schedule profiles for your building type (e.g. 'medium office occupancy
-  weekday fraction schedule'). Use the returned time-value data as a starting
-  point, then adjust to match the spec.
+Reference database (MANDATORY before authoring schedules):
+- BEFORE you write a Schedule:Compact, you MUST call
+  search_energyplus_reference to look up a reference profile for that
+  schedule's building type and purpose. Query concretely, e.g.
+    'office occupancy weekday fraction schedule'
+    'retail lighting schedule weekday'
+    'residential occupancy schedule'
+  Use the returned time-value data as the starting blueprint, then adjust
+  to match the spec's hours/values.
+- For ScheduleTypeLimits bounds you are unsure about, also query
+  (e.g. 'temperature type limits heating cooling').
+- Fall back to your own values ONLY when the query returns zero matches.
 """
 
 

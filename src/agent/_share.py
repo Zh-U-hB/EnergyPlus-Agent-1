@@ -1,6 +1,13 @@
+import json
 import os
+import re
+import time
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
+
+from langchain_core.messages import BaseMessage
+from loguru import logger
+from pydantic import BaseModel
 
 from src.validator import BaseSchema
 
@@ -84,3 +91,188 @@ def ensure_schema_initialized() -> None:
         return
     BaseSchema.set_idf()
     _SCHEMA_INITIALIZED = True
+
+
+# ── Structured-output text fallback ─────────────────────────────────────────
+#
+# Some OpenAI-compatible providers (notably Zhipu GLM via the coding endpoint)
+# do NOT emit a function_call / tool_call for large nested schemas — instead
+# they return the JSON object as plain text, often wrapped in ```json ... ```
+# code fences. LangChain's `with_structured_output(method="function_calling")`
+# only inspects tool_calls, so it yields `parsed=None, parsing_error=None`
+# while `raw.content` holds perfectly valid JSON text. The helpers below
+# recover that case without changing the fast path (real tool_calls).
+
+_FENCE_RE = re.compile(
+    r"^\s*```(?:json|JSON)?\s*\n(?P<body>.*?)```(?:\s)*$",
+    re.DOTALL,
+)
+
+
+def strip_code_fences(text: str) -> str:
+    """Strip a single wrapping ```json ... ``` / ``` ... ``` fence.
+
+    Returns ``text`` unchanged if it isn't fenced. Only a fence spanning the
+    whole string (the common LLM case) is stripped, so embedded snippets are
+    left intact.
+    """
+    if not text:
+        return text
+    m = _FENCE_RE.match(text)
+    return m.group("body") if m else text
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    """Return the substring of ``text`` covering the first balanced ``{...}``.
+
+    Uses brace matching with naive string/escape awareness so it works even
+    when the JSON is preceded/followed by prose (e.g. "Here is the result:
+    {...} Hope it helps"). Returns ``None`` if no balanced object is found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
+def parse_structured_from_text[T: BaseModel](text: str, schema: type[T]) -> T | None:
+    """Best-effort: parse a Pydantic model out of free-form LLM text.
+
+    Pipeline: strip code fences → locate the first balanced JSON object →
+    ``json.loads`` → ``schema.model_validate``. Any failure returns ``None``
+    (never raises), so callers can branch on ``is None``.
+    """
+    if not text:
+        return None
+    candidate = _extract_first_json_object(strip_code_fences(text))
+    if candidate is None:
+        return None
+    try:
+        data = json.loads(candidate)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    try:
+        return schema.model_validate(data)
+    except Exception:
+        logger.debug(
+            "parse_structured_from_text: model_validate failed for {}",
+            schema.__name__,
+        )
+        return None
+
+
+def invoke_structured_robust[T: BaseModel](
+    llm: Any,
+    messages: list[BaseMessage],
+    schema: type[T],
+    *,
+    node_name: str,
+    max_retries: int = 1,
+) -> T:
+    """Invoke a structured-output LLM with a text-JSON fallback.
+
+    ``llm`` must be the result of ``create_llm().with_structured_output(
+    schema, method="function_calling", include_raw=True)`` so that
+    ``invoke()`` returns ``{"parsed", "parsing_error", "raw"}``.
+
+    Resolution order:
+    1. Fast path — the model emitted a real tool_call; ``parsed`` is returned
+       unchanged (zero overhead / regression for well-behaved providers).
+    2. Text fallback — when ``parsed`` is None but ``raw.content`` carries a
+       fenced JSON object (the GLM large-schema case), parse it with
+       :func:`parse_structured_from_text`.
+    3. Retry — if both fail and ``max_retries`` allows, back off (2s) and try
+       again; otherwise raise ``RuntimeError`` with diagnostics.
+    """
+    attempts = max_retries + 1
+    last_raw: BaseMessage | None = None
+    last_parsing_error: Any = None
+    for attempt in range(attempts):
+        result = llm.invoke(messages)
+        if not isinstance(result, dict):  # defensive; should not happen
+            raise RuntimeError(
+                f"{node_name}: structured output wrapper returned "
+                f"unexpected type {type(result).__name__}"
+            )
+        parsed = result.get("parsed")
+        if parsed is not None:
+            return parsed
+
+        last_raw = result.get("raw")
+        last_parsing_error = result.get("parsing_error")
+        raw_content = (
+            last_raw.content if last_raw is not None and isinstance(last_raw.content, str) else ""
+        )
+
+        # Text fallback — try to recover JSON the model emitted as plain text.
+        recovered = parse_structured_from_text(raw_content, schema)
+        if recovered is not None:
+            logger.info(
+                "{}: model returned text instead of a tool_call; "
+                "recovered {} via JSON text fallback.",
+                node_name,
+                schema.__name__,
+            )
+            return recovered
+
+        raw_preview = repr(raw_content)[:500]
+        is_truly_empty = last_parsing_error is None and raw_preview in ("''", "None")
+        if attempt < attempts - 1:
+            sleep_s = 2 ** (attempt + 1)
+            logger.warning(
+                "{}: structured parse failed (attempt {}/{}); "
+                "parsing_error={} raw_preview={} — retrying in {}s",
+                node_name,
+                attempt + 1,
+                attempts,
+                last_parsing_error,
+                raw_preview,
+                sleep_s,
+            )
+            time.sleep(sleep_s)
+            continue
+
+        # Final attempt exhausted.
+        if is_truly_empty:
+            detail = "The LLM returned an empty reply."
+        else:
+            detail = (
+                "The LLM replied with text instead of a tool call, and the "
+                "text did not contain a parseable JSON object."
+            )
+        logger.error(
+            "{}: structured output parsing exhausted. parsing_error={} "
+            "raw_preview={}",
+            node_name,
+            last_parsing_error,
+            raw_preview,
+        )
+        raise RuntimeError(
+            f"{node_name}: structured output parsing failed after {attempts} "
+            f"attempt(s). {detail} parsing_error={last_parsing_error!r}; "
+            f"raw preview: {raw_preview}"
+        )
+
+    # Unreachable — loop either returns or raises.
+    raise RuntimeError(f"{node_name}: unreachable")

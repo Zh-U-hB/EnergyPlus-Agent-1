@@ -40,12 +40,18 @@ Rules:
 - If the spec gives one thermostat for all zones, reuse the same
   template_thermostat_name across all zones.
 
-Reference database:
-- Call search_energyplus_reference with location and season to look up
-  design-day parameters (e.g. 'Beijing summer design day dry bulb temperature').
-  Use the returned values as context for thermostat setpoints or HVAC sizing
-  notes. These are reference values only — do not create SizingPeriod objects
-  unless explicitly requested.
+Reference database (MANDATORY before sizing/choosing setpoints):
+- BEFORE you finalize thermostat setpoints or HVAC sizing for a location,
+  you MUST call search_energyplus_reference to look up design-day
+  parameters for that location and season. Query with the location and
+  season, e.g.
+    'Shenzhen summer design day dry bulb temperature'
+    'Beijing winter design day heating'
+  Use the returned dry-bulb / humidity / solar data to sanity-check that
+  your setpoints and sizing notes are appropriate for the climate.
+- Note: these are climate reference values for sizing context — do NOT
+  create SizingPeriod objects unless the spec explicitly requests them.
+- Fall back to default setpoints ONLY when the query returns zero matches.
 """
 
 

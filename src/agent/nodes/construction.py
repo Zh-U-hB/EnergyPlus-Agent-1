@@ -71,12 +71,21 @@ Rules:
   'Interior_Door_Open'. EXTERIOR doors/windows still use a normal layered
   Construction (glazing for windows, opaque for doors).
 
-Reference database:
-- Call search_energyplus_reference to look up standard layer sequences for
-  named construction types (e.g. 'ASHRAE 90.1 exterior wall office').
-  Match returned layer names to existing materials via list_materials;
-  if a reference layer has no local equivalent, use the nearest match by
-  thermal properties.
+Reference database (MANDATORY before authoring any layered assembly):
+- BEFORE you decide the layer sequence for a construction, you MUST call
+  search_energyplus_reference to look up a standard assembly for that
+  surface type. Query by surface type and use, e.g.
+    'exterior wall construction office brick insulation'
+    'roof construction concrete XPS'
+    'interior partition wall construction'
+  Use the returned layer sequence (outside -> inside) from the TOP result
+  as the reference blueprint for which material roles/layers to include.
+- Match each reference layer to an existing material via list_materials
+  (by closest thermal role: e.g. structural, insulation, finish). If a
+  reference layer has no exact local equivalent, pick the nearest match
+  by thermal properties rather than inventing a new name.
+- Fall back to your own layer sequence ONLY when the query returns zero
+  matches.
 """
 
 

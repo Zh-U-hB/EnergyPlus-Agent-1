@@ -140,6 +140,7 @@ def make_rag_tool(
             })
 
         try:
+            tables_scope = ",".join(allowed_tables) if allowed_tables else "(all)"
             results = []
             if allowed_tables:
                 for table in allowed_tables:
@@ -161,6 +162,10 @@ def make_rag_tool(
                 )
 
             if not results:
+                _logger.info(
+                    "RAG miss | query={!r} | tables=[{}] | 0 hits",
+                    query, tables_scope,
+                )
                 return json.dumps({
                     "success": True,
                     "message": (
@@ -180,6 +185,19 @@ def make_rag_tool(
                 }
                 for r in results
             ]
+            # Structured detail line so RAG lookups are visible in the test log.
+            # Format: RAG hit | query=... | tables=[...] | N hits | top: name(score)
+            top_summary = " | ".join(
+                "{}({:.3f})".format(
+                    (r.full_data or {}).get("name") or r.table_name or "?",
+                    r.score or 0.0,
+                )
+                for r in results[:3]
+            )
+            _logger.info(
+                "RAG hit  | query={!r} | tables=[{}] | {} hits | top: {}",
+                query, tables_scope, len(results), top_summary,
+            )
             return json.dumps({
                 "success": True,
                 "message": f"Found {len(records)} matching EnergyPlus reference records.",
@@ -187,6 +205,10 @@ def make_rag_tool(
             })
 
         except Exception as exc:
+            _logger.warning(
+                "RAG error | query={!r} | tables=[{}] | {}",
+                query, tables_scope, exc,
+            )
             return json.dumps({
                 "success": False,
                 "message": (

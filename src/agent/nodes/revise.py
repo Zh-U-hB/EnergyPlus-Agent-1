@@ -16,17 +16,14 @@ Key differences from intake:
 
 from __future__ import annotations
 
-import time
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from loguru import logger
 
-from src.agent._share import language_directive
+from src.agent._share import invoke_structured_robust, language_directive
 from src.agent.llm import create_llm
 from src.agent.nodes.intake import INTAKE_MAX_EMPTY_RETRIES
 from src.agent.state import AgentState, AgentStateUpdate, IntakeOutput
-
 
 REVISE_SYSTEM_PROMPT = """You are an EnergyPlus model-revision specialist.
 The user has ALREADY built a complete model and run a simulation. Now they
@@ -171,37 +168,14 @@ def revise_node(state: AgentState) -> AgentStateUpdate:
         HumanMessage(content=text),
     ]
 
-    # Retry on empty LLM replies (same gateway transient as intake_node).
-    result: dict[str, Any] = {}
-    parsed: IntakeOutput | None = None
-    for attempt in range(INTAKE_MAX_EMPTY_RETRIES + 1):
-        result = cast(dict[str, Any], llm.invoke(messages))
-        parsed = result.get("parsed")
-        if parsed is not None:
-            break
-        raw = result.get("raw")
-        parsing_error = result.get("parsing_error")
-        raw_preview = repr(raw.content if raw is not None else raw)[:500]
-        is_empty = parsing_error is None and raw_preview in ("''", "None")
-        if not is_empty or attempt == INTAKE_MAX_EMPTY_RETRIES:
-            logger.error(
-                "revise_node: structured output parse failed. "
-                "parsing_error={} raw preview={}",
-                parsing_error,
-                raw_preview,
-            )
-            raise RuntimeError(
-                "IntakeOutput parsing returned None in revise_node. "
-                f"parsing_error={parsing_error!r}; raw preview: {raw_preview}"
-            )
-        sleep_s = 2 ** (attempt + 1)
-        logger.warning(
-            "revise_node: empty LLM reply (attempt {}/{}), retrying in {}s",
-            attempt + 1,
-            INTAKE_MAX_EMPTY_RETRIES + 1,
-            sleep_s,
-        )
-        time.sleep(sleep_s)
+    # Same tool_call + text-JSON fallback + empty-reply retry as intake_node.
+    parsed = invoke_structured_robust(
+        llm,
+        messages,
+        IntakeOutput,
+        node_name="revise",
+        max_retries=INTAKE_MAX_EMPTY_RETRIES - 2,  # → 1 extra attempt
+    )
 
     # Preserve building/site_location from the existing model (the LLM may
     # echo them, but we force the authoritative values to avoid drift).

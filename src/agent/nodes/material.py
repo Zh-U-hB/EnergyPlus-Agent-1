@@ -81,15 +81,26 @@ Rules:
 - Material names must be unique and self-describing (e.g., 'Brick_100mm',
   'EPS_Insulation_R5', 'Window_U1.8_SHGC0.4').
 - Roughness options: VeryRough, Rough, MediumRough, MediumSmooth, Smooth, VerySmooth.
-- Use typical ASHRAE values when the description is vague.
 - Call list_materials once at the end to verify.
 
-Reference database:
-- Call search_energyplus_reference BEFORE inventing property values for any
-  named material. Use the full_data fields from the top result as the source
-  of truth (conductivity, density, specific_heat, thermal_resistance, etc.).
-  Fall back to ASHRAE typical values only when no match is found (empty results
-  or score below threshold).
+Reference database (MANDATORY, not optional):
+- For EVERY material you are about to create, you MUST call
+  search_energyplus_reference FIRST to look up its real thermal properties,
+  even when the spec seems vague or gives only a material category
+  (e.g. "brick wall", "concrete floor", "insulation"). Do NOT invent
+  conductivity / density / specific heat from memory.
+- Query with a concrete, descriptive phrase: include the material name or
+  category and the property you need, e.g.
+    'concrete normal weight conductivity density specific heat'
+    'brick wall thermal properties'
+    'EPS expanded polystyrene insulation'
+- Use the full_data fields from the TOP result as the source of truth
+  (conductivity, density, specific_heat, thermal_resistance, thickness, etc.).
+  These are real, validated EnergyPlus values — prefer them over memorized
+  numbers every time.
+- Fall back to ASHRAE typical values ONLY when the query genuinely returns
+  zero matches (empty data list). Trying once and getting no hits is the
+  only valid reason to skip RAG.
 """
 
 
