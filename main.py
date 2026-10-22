@@ -164,6 +164,13 @@ def run_agent(
             help="Unique identifier for this conversation thread",
         ),
     ] = "demo",
+    with_rag: Annotated[
+        bool,
+        Option(
+            "--with-rag/--without-rag",
+            help="Enable reference augmented generation (RAG)",
+        ),
+    ] = False,
 ) -> None:
     """Run the multi-phase agent end-to-end.
 
@@ -180,7 +187,16 @@ def run_agent(
 
     settings = ReferenceSettings()
     # Configured but unreachable or mismatched fails here, before any LLM call.
-    reference = ReferenceSearch.connect(settings, epw) if settings.enabled else None
+    if with_rag and not settings.enabled:
+        raise typer.BadParameter(
+            "--with-rag given but reference search is not configured; "
+            "set REFERENCE_QDRANT_URL and REFERENCE_EMBEDDING_URL"
+        )
+    reference = (
+        ReferenceSearch.connect(settings, epw)
+        if settings.enabled and with_rag
+        else None
+    )
     context = SimContext(epw_path=epw, output_dir=output_dir, reference=reference)
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
